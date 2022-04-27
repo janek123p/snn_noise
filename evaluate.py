@@ -1,0 +1,118 @@
+'''
+Created on 15.12.2014
+
+@author: Peter U. Diehl
+'''
+
+import numpy as np
+import matplotlib.cm as cmap
+import matplotlib.pyplot as plt
+from brian2 import *
+import sys
+import argparse
+import os
+
+from functions.data import get_labeled_data
+
+#------------------------------------------------------------------------------ 
+# functions
+#------------------------------------------------------------------------------     
+
+def get_recognized_number_ranking(assignments, spike_rates):
+    summed_rates = [0] * 10
+    num_assignments = [0] * 10
+    for i in range(10):
+        num_assignments[i] = len(np.where(assignments == i)[0])
+        if num_assignments[i] > 0:
+            summed_rates[i] = np.sum(spike_rates[assignments == i]) / num_assignments[i]
+    return np.argsort(summed_rates)[::-1]
+
+def get_new_assignments(result_monitor, input_numbers):
+    print(result_monitor.shape)
+    assignments = np.ones(n_e) * -1 # initialize them as not assigned
+    input_nums = np.asarray(input_numbers)
+    maximum_rate = [0] * n_e    
+    for j in range(10):
+        num_inputs = len(np.where(input_nums == j)[0])
+        if num_inputs > 0:
+            rate = np.sum(result_monitor[input_nums == j], axis = 0) / num_inputs
+        for i in range(n_e):
+            if rate[i] > maximum_rate[i]:
+                maximum_rate[i] = rate[i]
+                assignments[i] = j 
+    return assignments
+
+
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser(description='''Script to initialize the directory structure for a simulation including generating random weights ''')
+    parser.add_argument('-label', dest='label', type=str, help='Name of the root directory of the directory strucuture that is created', required = True)
+    parser.add_argument('-num_assigns', dest='assignment_number', type=int, help='Number of training results that are used to calculate assignments', default = 10000)
+    args = parser.parse_args(sys.argv[1:])
+    label = args.label
+    num_assign = args.assignment_number
+    path = './simulations/%s' % label
+
+    if not os.path.exists(path):
+        raise Exception("No directory (%s) corresponding to the given label does exist!" % path)
+
+    MNIST_data_path = './mnist/'
+    data_path = path + '/activity/'
+
+    n_e = 400 # Number of excitatory neurons
+    n_input = 784 # Number of input neurons
+    ending = ''
+
+    print('Loading MNIST dataset...')
+    training = get_labeled_data(MNIST_data_path + 'training')
+    testing = get_labeled_data(MNIST_data_path + 'testing', bTrain = False)
+
+    print('Loading simulation results...')
+    training_result_monitor = np.load(data_path + 'resultPopVecs_train.npy')[-num_assign:]
+    training_input_numbers = np.load(data_path + 'inputNumbers_train.npy')[-num_assign:]
+    testing_result_monitor = np.load(data_path + 'resultPopVecs_test.npy')
+    testing_input_numbers = np.load(data_path + 'inputNumbers_test.npy')
+    print(training_result_monitor.shape)
+
+    print('Calculating assignments...')
+    assignments = get_new_assignments(training_result_monitor, training_input_numbers)
+    test_size = len(testing_input_numbers)
+    test_results = np.zeros((10, test_size))
+    print('calculate accuracy for sum')
+    for i in range(test_size):
+        test_results[:,i] = get_recognized_number_ranking(assignments, testing_result_monitor[i,:])
+    difference = test_results[0,:] - testing_input_numbers[:]
+    correct_indices = np.where(difference == 0)[0]
+    incorrect_indices = np.where(difference != 0)[0]
+    correct = len(correct_indices)
+    incorrect = len(incorrect_indices)
+    print('Accuracy: %.3f, Correct classified: %d/%d, Incorrect classified %d/%d' % (correct / test_size, correct, test_size, incorrect, test_size))
+
+    sqrt_incorrect = np.sqrt(incorrect)
+    n_cols = int(sqrt_incorrect)
+    if n_cols * n_cols != incorrect:
+        n_cols += 1
+    
+    wrong_images = np.zeros((n_cols*28, n_cols*28))
+    for i, idx in enumerate(incorrect_indices):
+        x = i % n_cols
+        y = i // n_cols
+        wrong_images[x*28:(x+1)*28, y*28:(y+1)*28] = testing['x'][i].reshape(28,28)
+
+    plt.imshow(wrong_images, interpolation="nearest", cmap = cmap.get_cmap('hot_r') , aspect='equal', extent = [0, n_cols,0,n_cols])
+    plt.colorbar()
+    plt.title("Wrong classified MNIST images")
+    plt.savefig(path + '/plots/wrong_classified.png', dpi = 600)
+
+    classification_matrix = np.zeros((10,10))
+    for i in range(test_size):
+        desired = testing_input_numbers[i]
+        output = test_results[0,i]
+        classification_matrix[desired, output] += 1
+    
+    plt.imshow(classification_matrix, interpolation="nearest", cmap = cmap.get_cmap('hot_r') , aspect='equal', extent = [0, 10,0,10])
+    plt.colorbar()
+    plt.xlabel('Desired output')
+    plt.ylabel('Prediction')
+    plt.savefig(path + '/plots/classification_matrix.png', dpi = 600)
+
+    print('Evaluation done!')
