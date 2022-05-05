@@ -7,14 +7,18 @@ import os
 
 plt.switch_backend('Agg')
 
-def show_weights(filename, savename, wmax):
-    weights = np.load(filename)
-    weight_mat = weights[:,2].reshape(28*28,-1)
+def show_weights(filename, savename, wmax, arr = None, fignum = 1223):
+    if arr is None:
+        weights = np.load(filename)
+        weight_mat = weights[:,2].reshape(28*28,-1)
+    else:
+        weight_mat = arr.reshape(28*28, -1)
     n_ex = int(np.sqrt(weight_mat.shape[1]))
     rearranged_mat = np.zeros((28*n_ex, 28*n_ex))
     for i in range(weight_mat.shape[1]):
         rearranged_mat[int(i/n_ex)*28:int(i/n_ex+1)*28, int(i%n_ex)*28:int(i%n_ex+1)*28] = weight_mat[:,i].reshape(28,28)
 
+    plt.figure(num = fignum)
     plt.imshow(rearranged_mat, interpolation="nearest", cmap = cm.get_cmap('hot_r'), aspect='equal', extent = [0, 20,0,20], vmin=0., vmax=wmax)
     plt.colorbar()
     plt.title("Rearranged weights")
