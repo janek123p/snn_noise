@@ -113,14 +113,21 @@ if __name__ == '__main__':
         output = int(test_results[0,i])
         classification_matrix[desired, output] += 1
     for i in range(10):
-        classification_matrix[:,i] /= np.sum(classification_matrix[:,i])
+        classification_matrix[i,:] /= np.sum(classification_matrix[i,:])
 
-    plt.imshow(classification_matrix, interpolation="nearest", cmap = cmap.get_cmap('hot_r'), aspect='equal', extent = [-0.5, 9.5,-0.5,9.5])
+
+    plt.imshow(np.flip(classification_matrix.T, axis = 0), interpolation="nearest", cmap = cmap.get_cmap('hot_r'), aspect='equal', extent = [-0.5, 9.5,-0.5,9.5])
     plt.colorbar()
     plt.xlabel('Desired output')
     plt.ylabel('Prediction')
     plt.xticks(np.arange(0,10,1))
     plt.yticks(np.arange(0,10,1))
+
+    for i in range(10):
+        for j in range(10):
+            val = int(np.round(classification_matrix[i,j]*100))
+            plt.text(i-0.4,j-0.15,"%2d%%" % val, color ='white' if val > 50 else 'black' )
+
     plt.savefig(path + '/plots/classification_matrix.png', dpi = 600)
 
     print('Evaluation done!')
