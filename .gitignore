@@ -3,3 +3,5 @@ tmp
 var
 nohup.out
 __pycache__
+mnist
+fashion_mnist
