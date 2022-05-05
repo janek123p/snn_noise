@@ -2,6 +2,6 @@ simulations
 tmp
 var
 nohup.out
-__pycache__
+__pycache__/
 mnist
 fashion_mnist
