@@ -12,8 +12,8 @@ def salt_and_pepper(mnist_1d_arr, alpha):
     return copy
 
 def remove_rectangle(mnist_1d_arr, min_size, max_size):
-    width = min_size + int(np.random.rand()*(max_size+1))
-    height = min_size + int(np.random.rand()*(max_size+1))
+    width = min_size + int(np.random.rand()*(max_size-min_size+1))
+    height = min_size + int(np.random.rand()*(max_size-min_size+1))
     x = int(np.random.rand() * (28-width))
     y = int(np.random.rand() * (28-height))
     copy = mnist_1d_arr.reshape(28,28)
