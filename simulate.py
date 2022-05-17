@@ -1,13 +1,25 @@
 '''
 Created on 15.12.2014
+by P. U. Diehl
 
-@author: Peter U. Diehl
+modified by Janek Paessens
 '''
 
-# imports needed to parse arguments
+# imports
 import sys
 import argparse
 import os
+import numpy as np
+import time
+from brian2 import *
+import os
+import brian2 as b2
+from brian2tools import *
+
+# imports from own modules
+from functions.data import get_labeled_data
+from functions.input_noise import salt_and_pepper, remove_rectangle, plot_salt_and_pepper_examples, plot_remove_rectangle_examples
+
 
 ######################################################
 # ARGUMENT PARSING                                   #
@@ -17,7 +29,7 @@ parser = argparse.ArgumentParser(description='''Simulation of SNN to classify MN
 [https://www.frontiersin.org/articles/10.3389/fncom.2015.00099/full]. \
 Original code can be found here: [https://github.com/peter-u-diehl/stdp-mnist].\
 Migration of the original code to Brian2 and Python 3 can be found here: [https://github.com/sdpenguin/Brian2STDPMNIST].''')
-parser.add_argument('-mode', dest='mode', type=str, help='Either test or training', required = True)
+parser.add_argument('-mode', dest='mode', type=str, choices=['test', 'train', 'TEST', 'TRAIN', 'training', 'TRAINING'], help='Either test or training', required = True)
 parser.add_argument('-label', dest='path', type=str, help='Label to save output files with', required = True)
 parser.add_argument('-data', dest='datapath', type=str, help='Data path of MNIST dataset [./mnist/]', default = 'mnist/')
 parser.add_argument('-epochs', dest='epochs', type=int, help='Number of epochs to train data with [1]', default = 1)
@@ -38,6 +50,10 @@ parser.add_argument('-rectangle_noise_min', dest='rectangle_noise_min', type = i
 parser.add_argument('-rectangle_noise_max', dest='rectangle_noise_max', type = int, help='Maximal width and height of the rectangle that is removed from the input image [None]', default = None)
 parser.add_argument('-p_dont_send_spike', dest='p_dont_send_spike', type = float, help='Propability that a spike in excitatory layer occurs without increasing\
 the postsynaptic conductance in the inhibitory layer [None]', default = None)
+parser.add_argument('-synapse_model', dest = 'syn_model', choices = ['triplet', 'clopath', 'TRIPLET', 'CLOPATH'], type = str, help ='Whether triplet stdp or clopath stdp should be used [triplet]', default='triplet')
+parser.add_argument('-debug', dest = 'debug', help ='Whether debug information should be printed, plotted and saved. CAUTION: May by storage-consuming! [False]', action='store_true')
+parser.add_argument('-test_label', dest = 'test_label', help ='Label to identify test cas with [None]', default = None, type = str)
+
 
 args = parser.parse_args(sys.argv[1:])
 
@@ -58,6 +74,12 @@ salt_pepper_alpha = args.salt_pepper_alpha
 rectangle_noise_min = args.rectangle_noise_min
 rectangle_noise_max = args.rectangle_noise_max
 p_dont_send_spike = args.p_dont_send_spike
+clopath = args.syn_model.upper() == 'CLOPATH'
+save_debug_info = args.debug
+test_label = args.test_label
+
+if test_label is None:
+    test_label = "std"
 
 # if either max (or min) is None set max (min) to min (max)
 # if both are None they stay None
@@ -66,7 +88,7 @@ if rectangle_noise_max is None:
 if rectangle_noise_min is None:
     rectangle_noise_min = rectangle_noise_max
 
-print_addon = filename_label+": "
+print_addon = filename_label+"_"+test_label+": "
 
 data_path = './simulations/'+filename_label +'/'
 if not os.path.exists(data_path):
@@ -77,8 +99,8 @@ for subf in subfolder:
     if not os.path.exists(data_path+subf):
         raise Exception(print_addon+"Directory structure is incompletet! Directory %s is missing!" % (data_path+subf))
 
-summary = '%s\nGeneral information:\n%s\n\ntest_mode = %s\nlabel = %s\nepochs = %d\ntrain size = %d\ntest size = %d\nplasticity during testing = %s\n' \
-    % (60*'-',60*'-', test_mode, filename_label, epochs, train_size, test_size, plasticity_during_testing)
+summary = '%s\nGeneral information:\n%s\n\ntest_mode = %s\nlabel = %s\nepochs = %d\ntrain size = %d\ntest size = %d\nplasticity during testing = %s\nSynapse model = %s\n' \
+    % (60*'-',60*'-', test_mode, filename_label+"_"+test_label, epochs, train_size, test_size, plasticity_during_testing, 'clopath' if clopath else 'triplet')
 
 summary += '\n%s\nNoise information\n%s\n\n' % (60*'-',60*'-')
 if min_rand_theta > 0 and diff_rand_theta > 0:
@@ -95,19 +117,6 @@ if rectangle_noise_max is not None:
     summary += 'Minimal width of removed rectangle: %d\nMinimal width of removed rectangle: %d\n' % (rectangle_noise_min, rectangle_noise_max)
 if p_dont_send_spike is not None:
     summary += 'Propability that a presynaptic spike does not lead to an increase of the postsynaptic conductance: %.4f' % (p_dont_send_spike)
-
-# imports
-import numpy as np
-import time
-from brian2 import *
-import os
-import brian2 as b2
-from brian2tools import *
-from tqdm import tqdm
-
-# imports from own modules
-from functions.data import get_labeled_data
-from functions.input_noise import salt_and_pepper, remove_rectangle, plot_salt_and_pepper_examples, plot_remove_rectangle_examples
 
 b2.prefs.codegen.target = 'cython'
 b2.defaultclock.dt = 0.5 * b2.ms
@@ -186,24 +195,27 @@ def get_new_assignments(result_monitor, input_numbers):
         num_assignments = len(np.where(input_nums == j)[0])
         if num_assignments > 0:
             rate = np.sum(result_monitor[input_nums == j], axis = 0) / num_assignments
-        for i in range(n_e):
-            if rate[i] > maximum_rate[i]:
-                maximum_rate[i] = rate[i]
-                assignments[i] = j
+            for i in range(n_e):
+                if rate[i] > maximum_rate[i]:
+                    maximum_rate[i] = rate[i]
+                    assignments[i] = j
     return assignments
 
+def print_progress(j,total, last, num_since_last):
+    duration = time.time() - last
+    print("%d of %d [%.2fs/it]" % (j,total, duration/num_since_last))
 
 #------------------------------------------------------------------------------
 # load MNIST
 #------------------------------------------------------------------------------
 
 start = time.time()
-training = get_labeled_data(MNIST_data_path + 'training')
+training = get_labeled_data(MNIST_data_path + 'training', MNIST_data_path=MNIST_data_path)
 end = time.time()
 print(print_addon+'Time needed to load training set: %.4fs' % (end - start))
 
 start = time.time()
-testing = get_labeled_data(MNIST_data_path + 'testing', bTrain = False)
+testing = get_labeled_data(MNIST_data_path + 'testing', MNIST_data_path=MNIST_data_path, bTrain = False)
 end = time.time()
 print(print_addon+'Time needed to load test set: %.4fs' % (end - start))
 
@@ -212,7 +224,6 @@ print(print_addon+'Time needed to load test set: %.4fs' % (end - start))
 # set parameters and equations
 #------------------------------------------------------------------------------
 
-np.random.seed(0)
 if test_mode:
     weight_path = data_path + 'weights/'
     num_examples = test_size
@@ -223,8 +234,14 @@ else:
     ee_STDP_on = True
 
 record_spikes = True
-calculate_performance_interval = 500
-save_connections_interval = 1000
+
+if save_debug_info:
+    save_connections_interval = 100
+    calculate_performance_interval = 50
+else:
+    save_connections_interval = 1000
+    calculate_performance_interval = 500
+
 print_progress_interval = max(int(num_examples / 500), 1)
 
 ending = ''
@@ -276,7 +293,6 @@ if v_quant is not None:
     round_val_v = (v_thresh_e - v_reset_e) / (2**v_quant)
     print("Quantifying membrane voltage to a bin of",round_val_v)
 
-
 if test_mode and not plasticity_during_testing:
     if v_quant is not None:
         reset_e_str = 'x = v_reset_e; timer = 0*ms'
@@ -292,8 +308,7 @@ else:
 
 v_thresh_e_str = '(v > (rand_theta + theta - offset + v_thresh_e)) and (timer>refrac_e)'
 
-reset_rand_theta = 'rand_theta = min_rand_theta*mV + rand()*diff_rand_theta*mV'
-reset_e_str += '; '+  reset_rand_theta
+reset_e_str += '; rand_theta = min_rand_theta*mV + rand()*diff_rand_theta*mV'
 
 
 v_thresh_i_str = 'v>v_thresh_i'
@@ -305,45 +320,75 @@ if v_quant is not None:
             dx/dt = ((v_rest_e - x) + (I_synE+I_synI) / nS) / (100*ms) + (noise_v_min*mV + rand()*noise_v_diff * mV)/dt  : volt (unless refractory)
             v = floor(x / round_val_v) * round_val_v                : volt 
             I_synE = ge * nS *         -v                           : amp
-            I_synI = gi * nS * (-100.*mV-v)                         : amp
+            I_synI = gi * nS * (-100.*mV-v) * int(v > -100.*mV)     : amp
             dge/dt = -ge/(1.0*ms)                                   : 1
             dgi/dt = -gi/(2.0*ms)                                   : 1
+            dtimer/dt = 1                                           : second
+            rand_theta                                              :volt
             '''
 else:
     neuron_eqs_e = '''
             dv/dt = ((v_rest_e - v) + (I_synE+I_synI) / nS) / (100*ms) + (noise_v_min*mV + rand()*noise_v_diff * mV)/dt  : volt (unless refractory)
             I_synE = ge * nS *         -v                           : amp
-            I_synI = gi * nS * (-100.*mV-v)                          : amp
+            I_synI = gi * nS * (-100.*mV-v) * int(v > -100.*mV)     : amp
             dge/dt = -ge/(1.0*ms)                                   : 1
-            dgi/dt = -gi/(2.0*ms)                                  : 1
+            dgi/dt = -gi/(2.0*ms)                                   : 1
+            dtimer/dt = 1                                           : second
+            rand_theta                                              :volt
             '''
 
 if test_mode and not plasticity_during_testing:
     neuron_eqs_e += '\n  theta      :volt'
 else:
     neuron_eqs_e += '\n  dtheta/dt = -theta / (tc_theta)  : volt'
-neuron_eqs_e += '\n  dtimer/dt = 1  : second'
-neuron_eqs_e += '\n rand_theta :volt'
+
+
+if clopath:
+    tau_minus = 40*b2.ms
+    tau_plus = 30*b2.ms
+    neuron_eqs_e += '\n du_minus/dt = (v - u_minus) / tau_minus   : volt'
+    neuron_eqs_e += '\n du_plus/dt = (v - u_plus) / tau_plus      : volt'
+
 
 neuron_eqs_i = '''
-        dv/dt = ((v_rest_i - v) + (I_synE+I_synI) / nS) / (10*ms)  : volt (unless refractory)
-        I_synE = ge * nS *         -v                           : amp
-        I_synI = gi * nS * (-85.*mV-v)                          : amp
-        dge/dt = -ge/(1.0*ms)                                   : 1
-        dgi/dt = -gi/(2.0*ms)                                  : 1
+        dv/dt = ((v_rest_i - v) + (I_synE+I_synI) / nS) / (10*ms)   : volt (unless refractory)
+        I_synE = ge * nS *         -v                               : amp
+        I_synI = gi * nS * (-85.*mV-v)                              : amp
+        dge/dt = -ge/(1.0*ms)                                       : 1
+        dgi/dt = -gi/(2.0*ms)                                       : 1
         '''
-eqs_stdp_ee = '''
-                post2before                            : 1
-                dpre/dt   =   -pre/(tc_pre_ee)         : 1 (event-driven)
-                dpost1/dt  = -post1/(tc_post_1_ee)     : 1 (event-driven)
-                dpost2/dt  = -post2/(tc_post_2_ee)     : 1 (event-driven)
-            '''
-if w_quant is None:
-    eqs_stdp_pre_ee = 'pre = 1.; w = clip(w - nu_ee_pre * post1, 0, wmax_ee)'
-    eqs_stdp_post_ee = 'post2before = post2; w = clip(w + nu_ee_post * pre * post2before, 0, wmax_ee); post1 = 1.; post2 = 1.'
+if not clopath:
+    eqs_stdp_ee = '''
+                    post2before                                     : 1
+                    dpre/dt   =   -pre/(tc_pre_ee)                  : 1 (event-driven)
+                    dpost1/dt  = -post1/(tc_post_1_ee)              : 1 (event-driven)
+                    dpost2/dt  = -post2/(tc_post_2_ee)              : 1 (event-driven)
+                '''
+    if w_quant is None:
+        eqs_stdp_pre_ee = 'pre = 1.; w = clip(w - nu_ee_pre * post1, 0, wmax_ee)'
+        eqs_stdp_post_ee = 'post2before = post2; w = clip(w + nu_ee_post * pre * post2before, 0, wmax_ee); post1 = 1.; post2 = 1.'
+    else:
+        eqs_stdp_pre_ee = 'pre = 1.; w = floor(clip(w - nu_ee_pre * post1, 0, wmax_ee) / round_val_w) * round_val_w'
+        eqs_stdp_post_ee = 'post2before = post2; w = floor(clip(w + nu_ee_post * pre * post2before, 0, wmax_ee) / round_val_w) * round_val_w; post1 = 1.; post2 = 1.'
 else:
-    eqs_stdp_pre_ee = 'pre = 1.; w = floor(clip(w - nu_ee_pre * post1, 0, wmax_ee) / round_val_w) * round_val_w'
-    eqs_stdp_post_ee = 'post2before = post2; w = floor(clip(w + nu_ee_post * pre * post2before, 0, wmax_ee) / round_val_w) * round_val_w; post1 = 1.; post2 = 1.'
+    tau_x = 15 * b2.ms
+    A_LTD = 1e-6/b2.mV
+    A_LTP = 1.5*1e-4/(b2.mV*b2.mV)
+    x_reset = 1*b2.ms
+    theta_minus = v_reset_e
+    theta_plus = v_reset_e
+    eqs_stdp_ee = '''
+                    dxpre/dt   =   -xpre/(tau_x)         : 1 (event-driven)
+                '''
+
+    # POTENTIATION ONLY WORKS IF theta_plus = v_reset_e ==> OTHERWISE THE EQUATIONS BELOW ARE INCORRECT
+    if w_quant is None:
+        eqs_stdp_pre_ee = 'xpre = xpre + x_reset/tau_x; w = clip(w - A_LTD * (u_minus_post - theta_minus) * int(u_minus_post > theta_minus), 0, wmax_ee)'
+        eqs_stdp_post_ee = 'w = clip(w + A_LTP * xpre * (v_post - theta_plus) * int(v_post > theta_plus) * (u_plus_post - theta_minus) * int(u_plus_post > theta_minus), 0, wmax_ee)'
+    else:
+        eqs_stdp_pre_ee = 'xpre = xpre + x_reset/tau_x; w = floor(clip(w - A_LTD * (u_minus_post - theta_minus) * int(u_minus_post > theta_minus), 0, wmax_ee)/ round_val_w) * round_val_w'
+        eqs_stdp_post_ee = 'w = floor(clip(w + A_LTP * xpre * (v_post - theta_plus) * int(v_post > theta_plus) * (u_plus_post - theta_minus) * int(u_plus_post > theta_minus), 0, wmax_ee)/ round_val_w) * round_val_w'
+
 
 b2.ion()
 fig_num = 1
@@ -355,17 +400,14 @@ spike_monitors = {}
 spike_counters = {}
 result_monitor = np.zeros((int(num_examples),n_e))
 
-neuron_groups['e'] = b2.NeuronGroup(n_e*len(population_names), neuron_eqs_e, threshold= v_thresh_e_str, refractory= refrac_e, reset= reset_e_str, method='euler')
-neuron_groups['i'] = b2.NeuronGroup(n_i*len(population_names), neuron_eqs_i, threshold= v_thresh_i_str, refractory= refrac_i, reset= v_reset_i_str, method='euler')
+neuron_groups['Ae'] = b2.NeuronGroup(n_e*len(population_names), neuron_eqs_e, threshold= v_thresh_e_str, refractory= refrac_e, reset= reset_e_str, method='euler')
+neuron_groups['Ai'] = b2.NeuronGroup(n_i*len(population_names), neuron_eqs_i, threshold= v_thresh_i_str, refractory= refrac_i, reset= v_reset_i_str, method='euler')
 
 #------------------------------------------------------------------------------
 # create network population and recurrent connections
 #------------------------------------------------------------------------------
 for subgroup_n, name in enumerate(population_names):
     print(print_addon+'Creating neuron group %s...' % name)
-
-    neuron_groups[name+'e'] = neuron_groups['e'][subgroup_n*n_e:(subgroup_n+1)*n_e]
-    neuron_groups[name+'i'] = neuron_groups['i'][subgroup_n*n_i:(subgroup_n+1)*n_e]
 
     if v_quant is not None:
         neuron_groups[name+'e'].x = np.floor((v_rest_e - 40. * b2.mV) / round_val_v) * round_val_v
@@ -374,9 +416,9 @@ for subgroup_n, name in enumerate(population_names):
     neuron_groups[name+'i'].v = v_rest_i - 40. * b2.mV
 
     if test_mode or weight_path[-8:] == 'weights/':
-        neuron_groups['e'].theta = np.load(weight_path + 'theta_' + name + ending + '.npy') * b2.volt
+        neuron_groups[name+'e'].theta = np.load(weight_path + 'theta_' + name + ending + '.npy') * b2.volt
     else:
-        neuron_groups['e'].theta = np.ones((n_e)) * 20.0*b2.mV
+        neuron_groups[name+'e'].theta = np.ones((n_e)) * 20.0*b2.mV
         
     neuron_groups[name+'e'].rand_theta = min_rand_theta*b2.mV + np.random.rand(n_e) * diff_rand_theta * b2.mV
 
@@ -446,19 +488,12 @@ for name in input_connection_names:
             connections[connName].w = np.floor(weightMatrix[connections[connName].i, connections[connName].j] / round_val_w) * round_val_w
 
 
-#------------------------------------------------------------------------------
-# Adding noise
-#------------------------------------------------------------------------------
-
-"""@b2.network_operation(when = 'end')
-def debug(t):
-    pass"""
     
 #------------------------------------------------------------------------------
 # Printing summary
 #------------------------------------------------------------------------------
 
-with open(data_path+'summary_%s.txt' % 'test' if test_mode else 'train', 'w') as file:
+with open(data_path+'summary_%s.txt' % ('test'+"_"+test_label if test_mode else 'train'), 'w') as file:
     file.write(summary)
 
 #------------------------------------------------------------------------------
@@ -471,13 +506,10 @@ for obj_list in [neuron_groups, input_groups, connections, rate_monitors,
     for key in obj_list:
         net.add(obj_list[key])
 
-#net.add(debug)
-
 previous_spike_count = np.zeros(n_e)
 assignments = np.zeros(n_e)
 input_numbers = [0] * num_examples
 outputNumbers = np.zeros((num_examples, 10))
-
 performance = np.zeros(int(num_examples / calculate_performance_interval))
 
 for i,name in enumerate(input_population_names):
@@ -485,7 +517,8 @@ for i,name in enumerate(input_population_names):
 net.run(0*second)
 
 j = 0
-num_problem_saves = 0
+last_time = time.time()
+saved = False
 
 if salt_pepper_alpha is not None:
     print("Plotting examples for salt and pepper noisy images...")
@@ -495,8 +528,7 @@ if rectangle_noise_max is not None:
     plot_remove_rectangle_examples(training['x'], 3,5, rectangle_noise_min, rectangle_noise_max, filename_label)
 
 print('\n')
-pbar = tqdm(total = int(num_examples), desc = print_addon+"Training progress")
-
+print("Starting simulation...")
 
 while j < (int(num_examples)):
     if (not test_mode) or plasticity_during_testing:
@@ -516,14 +548,10 @@ while j < (int(num_examples)):
     current_spike_count = np.asarray(spike_counters['Ae'].count[:]) - previous_spike_count
     previous_spike_count = np.copy(spike_counters['Ae'].count[:])
 
-    if np.sum(current_spike_count) < 5 and input_intensity <= 10:
+    if np.sum(current_spike_count) < 5 and input_intensity <= 6:
         input_intensity += 1
-        if input_intensity == 10:
-            print("j=%d: WARNING: input_intensity = 10! Number of spikes: %d" % (j, np.sum(current_spike_count)))
-            if num_problem_saves < 15:
-                np.save(data_path+"meta/no_spikes_input_%d" % j, spike_rates)
-                save_connections("_problem_%d" % j)
-                num_problem_saves += 1
+        if input_intensity == 6:
+            print("j=%d: WARNING: input_intensity = 6! Number of spikes: %d" % (j, np.sum(current_spike_count)))
         for i,name in enumerate(input_population_names):
             input_groups[name+'e'].rates = 0 * Hz
         net.run(resting_time)
@@ -536,7 +564,8 @@ while j < (int(num_examples)):
         outputNumbers[j,:] = get_recognized_number_ranking(assignments, result_monitor[j,:])
 
         if j % print_progress_interval == print_progress_interval - 1:
-            pbar.update(print_progress_interval)
+            print_progress(j+1, int(num_examples), last_time, print_progress_interval)
+            last_time = time.time()
         for i,name in enumerate(input_population_names):
             input_groups[name+'e'].rates = 0 * Hz
         net.run(resting_time)
@@ -568,18 +597,23 @@ if not test_mode:
     save_theta()
     save_connections()
 
-suffix = 'test' if test_mode else 'train'
+print('Saving activity vectors and input numbers...')
+suffix = 'test_'+test_label if test_mode else 'train'
 
 np.save(data_path + 'activity/resultPopVecs_' + suffix, result_monitor)
 np.save(data_path + 'activity/inputNumbers_' + suffix, input_numbers)
 
-np.save(data_path+'meta/performance', performance)
+print('Saving performance course...')
+np.save(data_path+'meta/performance_'+suffix, performance)
 
 
 #------------------------------------------------------------------------------
 # plot results
 #------------------------------------------------------------------------------
-if rate_monitors:
+
+print('Saving plotting information...')
+
+if rate_monitors and not test_mode:
     b2.figure(fig_num)
     fig_num += 1
     b2.figure(figsize = (10, 10))
@@ -587,12 +621,13 @@ if rate_monitors:
         b2.subplot(len(rate_monitors), 1, 1+i)
         b2.plot(rate_monitors[name].t/b2.second, rate_monitors[name].rate, '.')
         b2.title('Rates of population ' + name)
-        np.save(data_path+'meta/rate_monitor_'+name+'_times', rate_monitors[name].t/b2.second)
-        np.save(data_path+'meta/rate_monitor_'+name+'_rates', rate_monitors[name].rate)
+        if save_debug_info:
+            np.save(data_path+'meta/rate_monitor_'+name+'_times', rate_monitors[name].t/b2.second)
+            np.save(data_path+'meta/rate_monitor_'+name+'_rates', rate_monitors[name].rate)
     b2.tight_layout()
     b2.savefig(data_path+"plots/rate_monitors.png", dpi = 600)
 
-if spike_monitors:
+if spike_monitors and not test_mode:
     b2.figure(fig_num)
     fig_num += 1
     b2.figure(figsize = (10, 10))
@@ -600,12 +635,13 @@ if spike_monitors:
         b2.subplot(len(spike_monitors), 1, 1+i)
         b2.plot(spike_monitors[name].t/b2.ms, spike_monitors[name].i, '.')
         b2.title('Spikes of population ' + name)
-        np.save(data_path+'meta/spike_monitor_'+name+'_times', spike_monitors[name].t/b2.ms)
-        np.save(data_path+'meta/spike_monitor_'+name+'_ids', spike_monitors[name].i)
+        if save_debug_info:
+            np.save(data_path+'meta/spike_monitor_'+name+'_times', spike_monitors[name].t/b2.ms)
+            np.save(data_path+'meta/spike_monitor_'+name+'_ids', spike_monitors[name].i)
     b2.tight_layout()
     b2.savefig(data_path+"plots/spike_monitors.png", dpi = 600)
 
-if spike_counters:
+if spike_counters and not test_mode:
     b2.figure(fig_num)
     fig_num += 1
     b2.plot(spike_monitors['Ae'].count[:])
