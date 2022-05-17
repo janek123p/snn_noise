@@ -47,7 +47,10 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='''Script to initialize the directory structure for a simulation including generating random weights ''')
     parser.add_argument('-label', dest='label', type=str, help='Name of the root directory of the directory strucuture that is created', required = True)
     parser.add_argument('-num_assigns', dest='assignment_number', type=int, help='Number of training results that are used to calculate assignments', default = 10000)
+    parser.add_argument('-datapath', dest='data_path', type=str, help='Datapath to load MNIST-images from', default = './mnist/')
+
     args = parser.parse_args(sys.argv[1:])
+    MNIST_data_path = args.data_path
     label = args.label
     num_assign = args.assignment_number
     path = './simulations/%s' % label
@@ -55,7 +58,6 @@ if __name__ == '__main__':
     if not os.path.exists(path):
         raise Exception("No directory (%s) corresponding to the given label does exist!" % path)
 
-    MNIST_data_path = './mnist/'
     data_path = path + '/activity/'
 
     n_e = 400 # Number of excitatory neurons
@@ -63,8 +65,8 @@ if __name__ == '__main__':
     ending = ''
 
     print('Loading MNIST dataset...')
-    training = get_labeled_data(MNIST_data_path + 'training')
-    testing = get_labeled_data(MNIST_data_path + 'testing', bTrain = False)
+    training = get_labeled_data(MNIST_data_path + 'training', MNIST_data_path=MNIST_data_path + 'training')
+    testing = get_labeled_data(MNIST_data_path + 'training', MNIST_data_path=MNIST_data_path + 'testing', bTrain = False)
 
     print('Loading simulation results...')
     training_result_monitor = np.load(data_path + 'resultPopVecs_train.npy')[-num_assign:]
