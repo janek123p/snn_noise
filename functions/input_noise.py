@@ -20,7 +20,7 @@ def remove_rectangle(mnist_1d_arr, min_size, max_size):
     copy[y:y+height+1, x:x+width+1] = 0
     return copy.flatten()
 
-def plot_salt_and_pepper_examples(mnist_arrs, num_rows, num_cols, alpha, label):
+def plot_salt_and_pepper_examples(mnist_arrs, num_rows, num_cols, alpha,datapath):
     fig, axes = plt.subplots(num_rows, num_cols, num = 22, clear = True, constrained_layout = True)
     indices = np.random.choice(mnist_arrs.shape[0],num_rows * num_cols)
     for i in range(num_rows):
@@ -32,9 +32,9 @@ def plot_salt_and_pepper_examples(mnist_arrs, num_rows, num_cols, alpha, label):
     fig.colorbar(im, ax = axes.ravel().tolist())
     fig.suptitle("Salt and pepper noise alpha = %.3f" % alpha)
     plt.axis('off')
-    plt.savefig('./simulations/%s/plots/salt_and_pepper_examples.png' % label)
+    plt.savefig(datapath+'plots/salt_and_pepper_examples.png')
 
-def plot_remove_rectangle_examples(mnist_arrs, num_rows, num_cols, min_w, max_w, label):
+def plot_remove_rectangle_examples(mnist_arrs, num_rows, num_cols, min_w, max_w, datapath):
     fig, axes = plt.subplots(num_rows, num_cols, num = 23, clear = True, constrained_layout = True)
     indices = np.random.choice(mnist_arrs.shape[0],num_rows * num_cols)
     for i in range(num_rows):
@@ -46,4 +46,4 @@ def plot_remove_rectangle_examples(mnist_arrs, num_rows, num_cols, min_w, max_w,
     fig.colorbar(im, ax = axes.ravel().tolist())
     fig.suptitle("MNIST images with removed rectangle\nmin width/height = %d and max width/height = %d" % (min_w, max_w))
     plt.axis('off')
-    plt.savefig('./simulations/%s/plots/remove_rectangle_examples.png' % label)
+    plt.savefig(datapath+'plots/remove_rectangle_examples.png')

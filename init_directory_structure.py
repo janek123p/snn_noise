@@ -29,7 +29,7 @@ def create_weights(label):
     nInput = 784
     nE = 400
     nI = nE 
-    dataPath = './simulations/'+label+'/random/'
+    dataPath = '/mnt/data4tb/paessens/simulations/'+label+'/random/'
     weight = {}
     weight['ee_input'] = 0.3 
     weight['ei_input'] = 0.2 
@@ -80,13 +80,13 @@ if __name__ == "__main__":
     args = parser.parse_args(sys.argv[1:])
     label = args.label
 
-    if os.path.exists('./simulations/%s' % label):
+    if os.path.exists('mnt/data4tb/paessens/simulations/%s' % label):
         raise Exception('Directory already exists! State a different label or delete direcotry!')
     
     print('Creating directory structure...')
     subfolder = ['plots', 'weights', 'activity', 'random', 'meta']
     for subf in subfolder:
-        os.makedirs('./simulations/%s/%s' % (label, subf))
+        os.makedirs('/mnt/data4tb/paessens/simulations/%s/%s' % (label, subf))
 
     create_weights(label)
     

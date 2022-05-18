@@ -33,7 +33,7 @@ if __name__ == "__main__":
     args = parser.parse_args(sys.argv[1:])
     label = args.label
     ending = args.ending
-    path = './simulations/%s' % label
+    path = '/mnt/data4tb/paessens/simulations/%s' % label
 
     if not os.path.exists(path):
         raise Exception('Directory %s does not exist!' %  (path))
