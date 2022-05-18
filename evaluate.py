@@ -48,12 +48,15 @@ if __name__ == '__main__':
     parser.add_argument('-label', dest='label', type=str, help='Name of the root directory of the directory strucuture that is created', required = True)
     parser.add_argument('-num_assigns', dest='assignment_number', type=int, help='Number of training results that are used to calculate assignments', default = 10000)
     parser.add_argument('-datapath', dest='data_path', type=str, help='Datapath to load MNIST-images from', default = './mnist/')
+    parser.add_argument('-test_label', dest='test_label', type=str, help='Label to identify test case.', default = None)
+
 
     args = parser.parse_args(sys.argv[1:])
     MNIST_data_path = args.data_path
     label = args.label
+    test_label = args.test_label
     num_assign = args.assignment_number
-    path = './simulations/%s' % label
+    path = '/mnt/data4tb/paessens/simulations/%s' % label
 
     if not os.path.exists(path):
         raise Exception("No directory (%s) corresponding to the given label does exist!" % path)
@@ -71,9 +74,14 @@ if __name__ == '__main__':
     print('Loading simulation results...')
     training_result_monitor = np.load(data_path + 'resultPopVecs_train.npy')[-num_assign:]
     training_input_numbers = np.load(data_path + 'inputNumbers_train.npy')[-num_assign:]
-    testing_result_monitor = np.load(data_path + 'resultPopVecs_test.npy')
-    testing_input_numbers = np.load(data_path + 'inputNumbers_test.npy')
-    print(training_result_monitor.shape)
+    if test_label is None:
+        testing_result_monitor = np.load(data_path + 'resultPopVecs_test.npy')
+        testing_input_numbers = np.load(data_path + 'inputNumbers_test.npy')
+    else:
+        testing_result_monitor = np.load(data_path + 'resultPopVecs_test_%s.npy' % test_label)
+        testing_input_numbers = np.load(data_path + 'inputNumbers_test_%s.npy' % test_label)
+
+    #print(training_result_monitor.shape)
 
     print('Calculating assignments...')
     assignments = get_new_assignments(training_result_monitor, training_input_numbers)
