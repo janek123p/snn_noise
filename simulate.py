@@ -127,6 +127,12 @@ if p_dont_send_spike is not None:
 b2.prefs.codegen.target = 'cython'
 b2.defaultclock.dt = 0.5 * b2.ms
 
+
+#------------------------------------------------------------------------------
+# brain functions
+#------------------------------------------------------------------------------
+
+
 #------------------------------------------------------------------------------
 # functions
 #------------------------------------------------------------------------------
@@ -174,7 +180,7 @@ def normalize_weights():
     for j in range(n_e):
         temp_conn[:,j] *= colFactors[j]
     if w_quant is not None:
-        temp_conn = np.floor(temp_conn * round_val_w) / round_val_w
+        temp_conn = np.round(temp_conn * round_val_w) / round_val_w
     connections[connName].w = temp_conn[connections[connName].i, connections[connName].j]
 
 def get_current_performance(current_example_num):
@@ -297,6 +303,12 @@ if w_quant is not None:
 if v_quant is not None:
     round_val_v = 2**v_quant
 
+current_dir = os.path.abspath(os.path.dirname(__file__))
+@b2.implementation('cython', 'from cython_functions cimport round_val', sources = [os.path.join(current_dir, 'cython_functions.pyx')])
+@b2.check_units(x=1,val=1, result=1)
+def round_val(x, val):
+    return np.round(x*val)/val
+
 if test_mode and not plasticity_during_testing:
     if v_quant is not None:
         reset_e_str = 'x = v_reset_e; timer = 0*ms'
@@ -322,7 +334,7 @@ v_reset_i_str = 'v=v_reset_i'
 if v_quant is not None:
     neuron_eqs_e = '''
             dx/dt = ((v_rest_e - x) + (I_synE+I_synI) / nS) / (100*ms) + (noise_v_min*mV + rand()*noise_v_diff * mV)/dt + sigma_v*sqrt(dt)*xi/dt  : volt (unless refractory)
-            v = floor(x/mV * round_val_v) / round_val_v*mV                : volt 
+            v = round_val(x/mV , round_val_v) * mV                  : volt 
             I_synE = ge * nS *         -v                           : amp
             I_synI = gi * nS * (-100.*mV-v) * int(v > -100.*mV)     : amp
             dge/dt = -ge/(1.0*ms)                                   : 1
@@ -372,8 +384,8 @@ if not clopath:
         eqs_stdp_pre_ee = 'pre = 1.; w = clip(w - nu_ee_pre * post1, 0, wmax_ee)'
         eqs_stdp_post_ee = 'post2before = post2; w = clip(w + nu_ee_post * pre * post2before, 0, wmax_ee); post1 = 1.; post2 = 1.'
     else:
-        eqs_stdp_pre_ee = 'pre = 1.; w = floor(clip(w - nu_ee_pre * post1, 0, wmax_ee) * round_val_w) / round_val_w'
-        eqs_stdp_post_ee = 'post2before = post2; w = floor(clip(w + nu_ee_post * pre * post2before, 0, wmax_ee) * round_val_w) / round_val_w; post1 = 1.; post2 = 1.'
+        eqs_stdp_pre_ee = 'pre = 1.; w = round_val(clip(w - nu_ee_pre * post1, 0, wmax_ee), round_val_w)'
+        eqs_stdp_post_ee = 'post2before = post2; w = round_val(clip(w + nu_ee_post * pre * post2before, 0, wmax_ee), round_val_w); post1 = 1.; post2 = 1.'
 else:
     tau_x = 15 * b2.ms
     A_LTD = 1e-9/b2.mV # 1e-6
@@ -390,8 +402,8 @@ else:
         eqs_stdp_pre_ee = 'xpre = xpre + x_reset/tau_x; w = clip(w - A_LTD * (u_minus_post - theta_minus) * int(u_minus_post > theta_minus), 0, wmax_ee)'
         eqs_stdp_post_ee = 'w = clip(w + A_LTP * xpre * (v_post - theta_plus) * int(v_post > theta_plus) * (u_plus_post - theta_minus) * int(u_plus_post > theta_minus), 0, wmax_ee)'
     else:
-        eqs_stdp_pre_ee = 'xpre = xpre + x_reset/tau_x; w = floor(clip(w - A_LTD * (u_minus_post - theta_minus) * int(u_minus_post > theta_minus), 0, wmax_ee)* round_val_w) / round_val_w'
-        eqs_stdp_post_ee = 'w = floor(clip(w + A_LTP * xpre * (v_post - theta_plus) * int(v_post > theta_plus) * (u_plus_post - theta_minus) * int(u_plus_post > theta_minus), 0, wmax_ee) * round_val_w) / round_val_w'
+        eqs_stdp_pre_ee = 'xpre = xpre + x_reset/tau_x; w = round_val(clip(w - A_LTD * (u_minus_post - theta_minus) * int(u_minus_post > theta_minus), 0, wmax_ee), round_val_w)'
+        eqs_stdp_post_ee = 'w = round_val(clip(w + A_LTP * xpre * (v_post - theta_plus) * int(v_post > theta_plus) * (u_plus_post - theta_minus) * int(u_plus_post > theta_minus), 0, wmax_ee) , round_val_w) '
 
 
 b2.ion()
@@ -414,7 +426,7 @@ for subgroup_n, name in enumerate(population_names):
     print(print_addon+'Creating neuron group %s...' % name)
 
     if v_quant is not None:
-        neuron_groups[name+'e'].x = np.floor((v_rest_e/b2.mV - 40.) * round_val_v) / round_val_v*b2.mV
+        neuron_groups[name+'e'].x = np.round((v_rest_e/b2.mV - 40.) * round_val_v) / round_val_v*b2.mV
     else:
         neuron_groups[name+'e'].v = v_rest_e - 40. * b2.mV
     neuron_groups[name+'i'].v = v_rest_i - 40. * b2.mV
@@ -489,7 +501,7 @@ for name in input_connection_names:
         if w_quant is None:
             connections[connName].w = weightMatrix[connections[connName].i, connections[connName].j]
         else:
-            connections[connName].w = np.floor(weightMatrix[connections[connName].i, connections[connName].j] * round_val_w) / round_val_w
+            connections[connName].w = np.round(weightMatrix[connections[connName].i, connections[connName].j] * round_val_w) / round_val_w
 
 
     
@@ -616,7 +628,7 @@ if not test_mode:
 # plot results
 #------------------------------------------------------------------------------
 
-print('Saving debug information (rate monitors, spike monitors, etc.)...')
+print('Saving plots...')
 
 if rate_monitors and not test_mode:
     b2.figure(fig_num)
