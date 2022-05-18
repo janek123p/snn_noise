@@ -43,6 +43,7 @@ parser.add_argument('-noise_membrane_voltage_max', dest='noise_membrane_voltage_
 of membrane voltage per timestep for excitatory neurons [0mV]', default = 0.)
 parser.add_argument('-noise_membrane_voltage_min', dest='noise_membrane_voltage_min', type = float, help='Minimal value of random adjustment\
 of membrane voltage per timestep for excitatory neurons [0mV]', default = 0.)
+parser.add_argument('-voltage_noise_sigma', dest='sigma_v', type = float, help='Standard deviation of the noise added to the membrane voltage every timestep in mV [0]', default = 0.)
 parser.add_argument('-membrane_voltage_quant', dest='membrane_voltage_quant', type = int, help='Number of bits to quantify membane voltage of excitatory neurons [None]', default = None)
 parser.add_argument('-weight_quant', dest='weight_quant', type = int, help='Number of bits to quantify weights [None]', default = None)
 parser.add_argument('-salt_and_pepper_alpha', dest='salt_pepper_alpha', type = float, help='Propability that a pixel in the input image gets replaced by 0 or 255 [None]', default = None)
@@ -50,6 +51,7 @@ parser.add_argument('-rectangle_noise_min', dest='rectangle_noise_min', type = i
 parser.add_argument('-rectangle_noise_max', dest='rectangle_noise_max', type = int, help='Maximal width and height of the rectangle that is removed from the input image [None]', default = None)
 parser.add_argument('-p_dont_send_spike', dest='p_dont_send_spike', type = float, help='Propability that a spike in excitatory layer occurs without increasing\
 the postsynaptic conductance in the inhibitory layer [None]', default = None)
+
 parser.add_argument('-synapse_model', dest = 'syn_model', choices = ['triplet', 'clopath', 'TRIPLET', 'CLOPATH'], type = str, help ='Whether triplet stdp or clopath stdp should be used [triplet]', default='triplet')
 parser.add_argument('-debug', dest = 'debug', help ='Whether debug information should be printed, plotted and saved. CAUTION: May by storage-consuming! [False]', action='store_true')
 parser.add_argument('-test_label', dest = 'test_label', help ='Label to identify test cas with [None]', default = None, type = str)
@@ -68,6 +70,7 @@ min_rand_theta = args.rand_thresh_min
 diff_rand_theta = args.rand_thresh_max - min_rand_theta
 noise_v_min = args.noise_membrane_voltage_min
 noise_v_diff = args.noise_membrane_voltage_max - noise_v_min
+sigma_v = args.sigma_v*b2.mV
 v_quant = args.membrane_voltage_quant
 w_quant = args.weight_quant
 salt_pepper_alpha = args.salt_pepper_alpha
@@ -88,9 +91,12 @@ if rectangle_noise_max is None:
 if rectangle_noise_min is None:
     rectangle_noise_min = rectangle_noise_max
 
-print_addon = filename_label+"_"+test_label+": "
+if test_mode:
+    print_addon = filename_label+"_"+test_label+": "
+else:
+    print_addon = filename_label+": "
 
-data_path = './simulations/'+filename_label +'/'
+data_path = '/mnt/data4tb/paessens/simulations/'+filename_label +'/'
 if not os.path.exists(data_path):
     raise Exception(print_addon+"Directory %s does not exist! Create it before running this script!" % data_path)
 
@@ -100,7 +106,7 @@ for subf in subfolder:
         raise Exception(print_addon+"Directory structure is incompletet! Directory %s is missing!" % (data_path+subf))
 
 summary = '%s\nGeneral information:\n%s\n\ntest_mode = %s\nlabel = %s\nepochs = %d\ntrain size = %d\ntest size = %d\nplasticity during testing = %s\nSynapse model = %s\n' \
-    % (60*'-',60*'-', test_mode, filename_label+"_"+test_label, epochs, train_size, test_size, plasticity_during_testing, 'clopath' if clopath else 'triplet')
+    % (60*'-',60*'-', test_mode, filename_label+"_"+test_label if test_mode else filename_label, epochs, train_size, test_size, plasticity_during_testing, 'clopath' if clopath else 'triplet')
 
 summary += '\n%s\nNoise information\n%s\n\n' % (60*'-',60*'-')
 if min_rand_theta > 0 and diff_rand_theta > 0:
@@ -168,7 +174,7 @@ def normalize_weights():
     for j in range(n_e):
         temp_conn[:,j] *= colFactors[j]
     if w_quant is not None:
-        temp_conn = np.floor(temp_conn / round_val_w) * round_val_w
+        temp_conn = np.floor(temp_conn * round_val_w) / round_val_w
     connections[connName].w = temp_conn[connections[connName].i, connections[connName].j]
 
 def get_current_performance(current_example_num):
@@ -287,11 +293,9 @@ STDP_offset = 0.4
 offset = 20.0*b2.mV
 
 if w_quant is not None:
-    round_val_w = wmax_ee/(2**w_quant)
-    print("Quantifying weights to a bin of %.5f" % (round_val_w))
+    round_val_w = 2**w_quant
 if v_quant is not None:
-    round_val_v = (v_thresh_e - v_reset_e) / (2**v_quant)
-    print("Quantifying membrane voltage to a bin of",round_val_v)
+    round_val_v = 2**v_quant
 
 if test_mode and not plasticity_during_testing:
     if v_quant is not None:
@@ -317,8 +321,8 @@ v_reset_i_str = 'v=v_reset_i'
 
 if v_quant is not None:
     neuron_eqs_e = '''
-            dx/dt = ((v_rest_e - x) + (I_synE+I_synI) / nS) / (100*ms) + (noise_v_min*mV + rand()*noise_v_diff * mV)/dt  : volt (unless refractory)
-            v = floor(x / round_val_v) * round_val_v                : volt 
+            dx/dt = ((v_rest_e - x) + (I_synE+I_synI) / nS) / (100*ms) + (noise_v_min*mV + rand()*noise_v_diff * mV)/dt + sigma_v*sqrt(dt)*xi/dt  : volt (unless refractory)
+            v = floor(x/mV * round_val_v) / round_val_v*mV                : volt 
             I_synE = ge * nS *         -v                           : amp
             I_synI = gi * nS * (-100.*mV-v) * int(v > -100.*mV)     : amp
             dge/dt = -ge/(1.0*ms)                                   : 1
@@ -328,7 +332,7 @@ if v_quant is not None:
             '''
 else:
     neuron_eqs_e = '''
-            dv/dt = ((v_rest_e - v) + (I_synE+I_synI) / nS) / (100*ms) + (noise_v_min*mV + rand()*noise_v_diff * mV)/dt  : volt (unless refractory)
+            dv/dt = ((v_rest_e - v) + (I_synE+I_synI) / nS) / (100*ms) + (noise_v_min*mV + rand()*noise_v_diff * mV)/dt + sigma_v*sqrt(dt)*xi/dt : volt (unless refractory)
             I_synE = ge * nS *         -v                           : amp
             I_synI = gi * nS * (-100.*mV-v) * int(v > -100.*mV)     : amp
             dge/dt = -ge/(1.0*ms)                                   : 1
@@ -368,12 +372,12 @@ if not clopath:
         eqs_stdp_pre_ee = 'pre = 1.; w = clip(w - nu_ee_pre * post1, 0, wmax_ee)'
         eqs_stdp_post_ee = 'post2before = post2; w = clip(w + nu_ee_post * pre * post2before, 0, wmax_ee); post1 = 1.; post2 = 1.'
     else:
-        eqs_stdp_pre_ee = 'pre = 1.; w = floor(clip(w - nu_ee_pre * post1, 0, wmax_ee) / round_val_w) * round_val_w'
-        eqs_stdp_post_ee = 'post2before = post2; w = floor(clip(w + nu_ee_post * pre * post2before, 0, wmax_ee) / round_val_w) * round_val_w; post1 = 1.; post2 = 1.'
+        eqs_stdp_pre_ee = 'pre = 1.; w = floor(clip(w - nu_ee_pre * post1, 0, wmax_ee) * round_val_w) / round_val_w'
+        eqs_stdp_post_ee = 'post2before = post2; w = floor(clip(w + nu_ee_post * pre * post2before, 0, wmax_ee) * round_val_w) / round_val_w; post1 = 1.; post2 = 1.'
 else:
     tau_x = 15 * b2.ms
-    A_LTD = 1e-6/b2.mV
-    A_LTP = 1.5*1e-4/(b2.mV*b2.mV)
+    A_LTD = 1e-9/b2.mV # 1e-6
+    A_LTP = 1e-4/(b2.mV*b2.mV) # 1.5*1e-4
     x_reset = 1*b2.ms
     theta_minus = v_reset_e
     theta_plus = v_reset_e
@@ -386,8 +390,8 @@ else:
         eqs_stdp_pre_ee = 'xpre = xpre + x_reset/tau_x; w = clip(w - A_LTD * (u_minus_post - theta_minus) * int(u_minus_post > theta_minus), 0, wmax_ee)'
         eqs_stdp_post_ee = 'w = clip(w + A_LTP * xpre * (v_post - theta_plus) * int(v_post > theta_plus) * (u_plus_post - theta_minus) * int(u_plus_post > theta_minus), 0, wmax_ee)'
     else:
-        eqs_stdp_pre_ee = 'xpre = xpre + x_reset/tau_x; w = floor(clip(w - A_LTD * (u_minus_post - theta_minus) * int(u_minus_post > theta_minus), 0, wmax_ee)/ round_val_w) * round_val_w'
-        eqs_stdp_post_ee = 'w = floor(clip(w + A_LTP * xpre * (v_post - theta_plus) * int(v_post > theta_plus) * (u_plus_post - theta_minus) * int(u_plus_post > theta_minus), 0, wmax_ee)/ round_val_w) * round_val_w'
+        eqs_stdp_pre_ee = 'xpre = xpre + x_reset/tau_x; w = floor(clip(w - A_LTD * (u_minus_post - theta_minus) * int(u_minus_post > theta_minus), 0, wmax_ee)* round_val_w) / round_val_w'
+        eqs_stdp_post_ee = 'w = floor(clip(w + A_LTP * xpre * (v_post - theta_plus) * int(v_post > theta_plus) * (u_plus_post - theta_minus) * int(u_plus_post > theta_minus), 0, wmax_ee) * round_val_w) / round_val_w'
 
 
 b2.ion()
@@ -410,7 +414,7 @@ for subgroup_n, name in enumerate(population_names):
     print(print_addon+'Creating neuron group %s...' % name)
 
     if v_quant is not None:
-        neuron_groups[name+'e'].x = np.floor((v_rest_e - 40. * b2.mV) / round_val_v) * round_val_v
+        neuron_groups[name+'e'].x = np.floor((v_rest_e/b2.mV - 40.) * round_val_v) / round_val_v*b2.mV
     else:
         neuron_groups[name+'e'].v = v_rest_e - 40. * b2.mV
     neuron_groups[name+'i'].v = v_rest_i - 40. * b2.mV
@@ -485,7 +489,7 @@ for name in input_connection_names:
         if w_quant is None:
             connections[connName].w = weightMatrix[connections[connName].i, connections[connName].j]
         else:
-            connections[connName].w = np.floor(weightMatrix[connections[connName].i, connections[connName].j] / round_val_w) * round_val_w
+            connections[connName].w = np.floor(weightMatrix[connections[connName].i, connections[connName].j] * round_val_w) / round_val_w
 
 
     
@@ -522,10 +526,10 @@ saved = False
 
 if salt_pepper_alpha is not None:
     print("Plotting examples for salt and pepper noisy images...")
-    plot_salt_and_pepper_examples(training['x'], 3,5, salt_pepper_alpha, filename_label)
+    plot_salt_and_pepper_examples(training['x'], 3,5, salt_pepper_alpha, data_path)
 if rectangle_noise_max is not None:
     print("Plotting examples for images with removed rectangle...")
-    plot_remove_rectangle_examples(training['x'], 3,5, rectangle_noise_min, rectangle_noise_max, filename_label)
+    plot_remove_rectangle_examples(training['x'], 3,5, rectangle_noise_min, rectangle_noise_max, data_path)
 
 print('\n')
 print("Starting simulation...")
@@ -603,15 +607,16 @@ suffix = 'test_'+test_label if test_mode else 'train'
 np.save(data_path + 'activity/resultPopVecs_' + suffix, result_monitor)
 np.save(data_path + 'activity/inputNumbers_' + suffix, input_numbers)
 
-print('Saving performance course...')
-np.save(data_path+'meta/performance_'+suffix, performance)
+if not test_mode:
+    print('Saving performance course...')
+    np.save(data_path+'meta/performance', performance)
 
 
 #------------------------------------------------------------------------------
 # plot results
 #------------------------------------------------------------------------------
 
-print('Saving plotting information...')
+print('Saving debug information (rate monitors, spike monitors, etc.)...')
 
 if rate_monitors and not test_mode:
     b2.figure(fig_num)
