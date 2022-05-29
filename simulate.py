@@ -37,6 +37,12 @@ parser.add_argument('-train_size', dest='train_size', type=int, help='Number of 
 parser.add_argument('-test_size', dest='test_size', type=int, help='Number of inputs to test data with [10000]', default = 10000)
 parser.add_argument('-plasticity', dest='plast_during_testing', help='Whether the network ist static\
 or plastic during testing phase', action = 'store_true')
+parser.add_argument('-synapse_model', dest = 'syn_model', choices = ['triplet', 'clopath', 'TRIPLET', 'CLOPATH'], type = str, help ='Whether triplet stdp or clopath stdp should be used [triplet]', default='triplet')
+parser.add_argument('-debug', dest = 'debug', help ='Whether debug information should be printed, plotted and saved. CAUTION: May by storage-consuming! [False]', action='store_true')
+parser.add_argument('-test_label', dest = 'test_label', help ='Label to identify test cas with [None]', default = None, type = str)
+parser.add_argument('-N', dest = 'N', help ='Number of excitatory and inhibitory neurons [400]', default = 400, type = int)
+
+
 parser.add_argument('-rand_threshold_max', dest='rand_thresh_max', type = float, help='Maximal value of random threshold in mV [0mV]', default = 0.)
 parser.add_argument('-rand_threshold_min', dest='rand_thresh_min', type = float, help='Minimal value of random threshold [0mV]', default = 0.)
 parser.add_argument('-noise_membrane_voltage_max', dest='noise_membrane_voltage_max', type = float, help='Maximal value of random adjustment\
@@ -51,11 +57,6 @@ parser.add_argument('-rectangle_noise_min', dest='rectangle_noise_min', type = i
 parser.add_argument('-rectangle_noise_max', dest='rectangle_noise_max', type = int, help='Maximal width and height of the rectangle that is removed from the input image [None]', default = None)
 parser.add_argument('-p_dont_send_spike', dest='p_dont_send_spike', type = float, help='Propability that a spike in excitatory layer occurs without increasing\
 the postsynaptic conductance in the inhibitory layer [None]', default = None)
-
-parser.add_argument('-synapse_model', dest = 'syn_model', choices = ['triplet', 'clopath', 'TRIPLET', 'CLOPATH'], type = str, help ='Whether triplet stdp or clopath stdp should be used [triplet]', default='triplet')
-parser.add_argument('-debug', dest = 'debug', help ='Whether debug information should be printed, plotted and saved. CAUTION: May by storage-consuming! [False]', action='store_true')
-parser.add_argument('-test_label', dest = 'test_label', help ='Label to identify test cas with [None]', default = None, type = str)
-
 
 args = parser.parse_args(sys.argv[1:])
 
@@ -258,7 +259,7 @@ print_progress_interval = max(int(num_examples / 500), 1)
 
 ending = ''
 n_input = 784
-n_e = 400
+n_e = args.N
 n_i = n_e
 single_example_time =   0.35 * b2.second #
 resting_time = 0.15 * b2.second
