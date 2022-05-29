@@ -248,8 +248,6 @@ else:
     num_examples = train_size * epochs
     ee_STDP_on = True
 
-record_spikes = True
-
 if save_debug_info:
     save_connections_interval = 100
     calculate_performance_interval = 50
@@ -418,8 +416,6 @@ fig_num = 1
 neuron_groups = {}
 input_groups = {}
 connections = {}
-rate_monitors = {}
-spike_monitors = {}
 spike_counters = {}
 result_monitor = np.zeros((int(num_examples),n_e))
 
@@ -466,14 +462,7 @@ for subgroup_n, name in enumerate(population_names):
         connections[connName].w = weightMatrix[connections[connName].i, connections[connName].j]
 
     print(print_addon+'Creating monitors for', name)
-    rate_monitors[name+'e'] = b2.PopulationRateMonitor(neuron_groups[name+'e'])
-    rate_monitors[name+'i'] = b2.PopulationRateMonitor(neuron_groups[name+'i'])
-    spike_counters[name+'e'] = b2.SpikeMonitor(neuron_groups[name+'e'])
-
-    if record_spikes:
-        spike_monitors[name+'e'] = b2.SpikeMonitor(neuron_groups[name+'e'])
-        spike_monitors[name+'i'] = b2.SpikeMonitor(neuron_groups[name+'i'])
-
+    spike_counters[name+'e'] = b2.SpikeMonitor(neuron_groups[name+'e'], record=False)
 
 #------------------------------------------------------------------------------
 # create input population and connections from input populations
@@ -481,7 +470,6 @@ for subgroup_n, name in enumerate(population_names):
 pop_values = [0,0,0]
 for i,name in enumerate(input_population_names):
     input_groups[name+'e'] = b2.PoissonGroup(n_input, 0*Hz)
-    rate_monitors[name+'e'] = b2.PopulationRateMonitor(input_groups[name+'e'])
 
 for name in input_connection_names:
     print(print_addon+'Creating connections between %s and %s...' %(name[0], name[1]))
@@ -524,8 +512,7 @@ with open(data_path+'summary_%s.txt' % ('test'+"_"+test_label if test_mode else 
 #------------------------------------------------------------------------------
 
 net = Network()
-for obj_list in [neuron_groups, input_groups, connections, rate_monitors,
-        spike_monitors, spike_counters]:
+for obj_list in [neuron_groups, input_groups, connections, spike_counters]:
     for key in obj_list:
         net.add(obj_list[key])
 
@@ -629,47 +616,5 @@ np.save(data_path + 'activity/inputNumbers_' + suffix, input_numbers)
 if not test_mode:
     print('Saving performance course...')
     np.save(data_path+'meta/performance', performance)
-
-
-#------------------------------------------------------------------------------
-# plot results
-#------------------------------------------------------------------------------
-
-print('Saving plots...')
-
-if rate_monitors and not test_mode:
-    b2.figure(fig_num)
-    fig_num += 1
-    b2.figure(figsize = (10, 10))
-    for i, name in enumerate(rate_monitors):
-        b2.subplot(len(rate_monitors), 1, 1+i)
-        b2.plot(rate_monitors[name].t/b2.second, rate_monitors[name].rate, '.')
-        b2.title('Rates of population ' + name)
-        if save_debug_info:
-            np.save(data_path+'meta/rate_monitor_'+name+'_times', rate_monitors[name].t/b2.second)
-            np.save(data_path+'meta/rate_monitor_'+name+'_rates', rate_monitors[name].rate)
-    b2.tight_layout()
-    b2.savefig(data_path+"plots/rate_monitors.png", dpi = 600)
-
-if spike_monitors and not test_mode:
-    b2.figure(fig_num)
-    fig_num += 1
-    b2.figure(figsize = (10, 10))
-    for i, name in enumerate(spike_monitors):
-        b2.subplot(len(spike_monitors), 1, 1+i)
-        b2.plot(spike_monitors[name].t/b2.ms, spike_monitors[name].i, '.')
-        b2.title('Spikes of population ' + name)
-        if save_debug_info:
-            np.save(data_path+'meta/spike_monitor_'+name+'_times', spike_monitors[name].t/b2.ms)
-            np.save(data_path+'meta/spike_monitor_'+name+'_ids', spike_monitors[name].i)
-    b2.tight_layout()
-    b2.savefig(data_path+"plots/spike_monitors.png", dpi = 600)
-
-if spike_counters and not test_mode:
-    b2.figure(fig_num)
-    fig_num += 1
-    b2.plot(spike_monitors['Ae'].count[:])
-    b2.title('Spike count of population Ae')
-    b2.savefig(data_path+"plots/spike_counter.png", dpi = 600)
 
 print(print_addon+'Finished!')
