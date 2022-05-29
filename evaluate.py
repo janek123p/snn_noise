@@ -12,6 +12,7 @@ import sys
 import argparse
 import os
 
+from sklearn.svm import SVC 
 from functions.data import get_labeled_data
 
 #------------------------------------------------------------------------------ 
@@ -42,6 +43,12 @@ def get_new_assignments(result_monitor, input_numbers):
                 assignments[i] = j 
     return assignments
 
+def train_SVM(X, y):
+    print("Training SVM...")
+    svc = SVC()
+    svc.fit(X, y)
+    return svc
+
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='''Script to initialize the directory structure for a simulation including generating random weights ''')
@@ -49,6 +56,8 @@ if __name__ == '__main__':
     parser.add_argument('-num_assigns', dest='assignment_number', type=int, help='Number of training results that are used to calculate assignments', default = 10000)
     parser.add_argument('-datapath', dest='data_path', type=str, help='Datapath to load MNIST-images from', default = './mnist/')
     parser.add_argument('-test_label', dest='test_label', type=str, help='Label to identify test case.', default = None)
+    parser.add_argument('-svm', dest='svm', help='Whether to use SVM to classify output', action = "store_true")
+    parser.add_argument('-N', dest='N', type=int, help='Number of inhibitory and excitatory neurons', default = 400)
 
 
     args = parser.parse_args(sys.argv[1:])
@@ -56,6 +65,7 @@ if __name__ == '__main__':
     label = args.label
     test_label = args.test_label
     num_assign = args.assignment_number
+    svm = args.svm
     path = '/mnt/data4tb/paessens/simulations/%s' % label
 
     if not os.path.exists(path):
@@ -63,7 +73,7 @@ if __name__ == '__main__':
 
     data_path = path + '/activity/'
 
-    n_e = 400 # Number of excitatory neurons
+    n_e = args.N # Number of excitatory neurons
     n_input = 784 # Number of input neurons
     ending = ''
 
@@ -82,15 +92,21 @@ if __name__ == '__main__':
         testing_input_numbers = np.load(data_path + 'inputNumbers_test_%s.npy' % test_label)
 
     #print(training_result_monitor.shape)
-
-    print('Calculating assignments...')
-    assignments = get_new_assignments(training_result_monitor, training_input_numbers)
     test_size = len(testing_input_numbers)
-    test_results = np.zeros((10, test_size))
-    print('Calculating accuracy...')
-    for i in range(test_size):
-        test_results[:,i] = get_recognized_number_ranking(assignments, testing_result_monitor[i,:])
-    difference = test_results[0,:] - testing_input_numbers[:]
+    test_results = np.zeros(test_size)
+    if not svm:
+        print('Calculating assignments...')
+        assignments = get_new_assignments(training_result_monitor, training_input_numbers)
+        print('Calculating accuracy...')
+        for i in range(test_size):
+            test_results[i] = get_recognized_number_ranking(assignments, testing_result_monitor[i,:])[0]
+    else:
+        svc = train_SVM(training_result_monitor, training_input_numbers)
+        print("Calculating predictions...")
+        test_results = svc.predict(testing_result_monitor)
+
+
+    difference = test_results[:] - testing_input_numbers[:]
     correct_indices = np.where(difference == 0)[0]
     incorrect_indices = np.where(difference != 0)[0]
     correct = len(correct_indices)
@@ -120,7 +136,7 @@ if __name__ == '__main__':
     classification_matrix = np.zeros((10,10))
     for i in range(test_size):
         desired = testing_input_numbers[i]
-        output = int(test_results[0,i])
+        output = int(test_results[i])
         classification_matrix[desired, output] += 1
     for i in range(10):
         classification_matrix[i,:] /= np.sum(classification_matrix[i,:])
