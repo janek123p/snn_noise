@@ -124,17 +124,11 @@ if rectangle_noise_max is not None:
     summary += 'Minimal width of removed rectangle: %d\nMinimal width of removed rectangle: %d\n' % (rectangle_noise_min, rectangle_noise_max)
 if p_dont_send_spike is not None:
     summary += 'Propability that a presynaptic spike does not lead to an increase of the postsynaptic conductance: %.4f' % (p_dont_send_spike)
-if abs(sigma_v/b2.mV) < 1e-10:
+if abs(sigma_v/b2.mV) > 1e-10:
     summary += 'Normally distributed noise of the membrane voltage: %.6f mV/dt' % sigma_v  
 
 b2.prefs.codegen.target = 'cython'
 b2.defaultclock.dt = 0.5 * b2.ms
-
-
-#------------------------------------------------------------------------------
-# brain functions
-#------------------------------------------------------------------------------
-
 
 #------------------------------------------------------------------------------
 # functions
