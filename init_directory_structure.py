@@ -25,8 +25,11 @@ def sparsenMatrix(baseMatrix, pConn):
     return weightMatrix, weightList
         
     
-def create_weights(label, N = 400):    
-    nInput = 784
+def create_weights(label, N = 400, is_mnist=True):   
+    if is_mnist: 
+        nInput = 784
+    else:
+        nInput = 3072
     nE = N
     nI = nE 
     dataPath = '/mnt/data4tb/paessens/simulations/'+label+'/random/'
@@ -78,9 +81,12 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='''Script to initialize the directory structure for a simulation including generating random weights ''')
     parser.add_argument('-label', dest='label', type=str, help='Name of the root directory of the directory strucuture that is created', required = True)
     parser.add_argument('-N', dest='N', type=int, help='Number of exitatory and inhibitory neurons', default = 400)
+    parser.add_argument('-input', dest='input_type', type=str, help='Input type: Either mnist or cifar10', default = 'mnist', choices = ["mnist", "cifar10"])
+
 
     args = parser.parse_args(sys.argv[1:])
     label = args.label
+    is_mnist = args.input_type == 'mnist'
 
     if os.path.exists('mnt/data4tb/paessens/simulations/%s' % label):
         raise Exception('Directory already exists! State a different label or delete direcotry!')
@@ -90,7 +96,7 @@ if __name__ == "__main__":
     for subf in subfolder:
         os.makedirs('/mnt/data4tb/paessens/simulations/%s/%s' % (label, subf))
 
-    create_weights(label, args.N)
+    create_weights(label, args.N, is_mnist)
     
 
 

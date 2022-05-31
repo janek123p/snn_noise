@@ -31,7 +31,7 @@ Original code can be found here: [https://github.com/peter-u-diehl/stdp-mnist].\
 Migration of the original code to Brian2 and Python 3 can be found here: [https://github.com/sdpenguin/Brian2STDPMNIST].''')
 parser.add_argument('-mode', dest='mode', type=str, choices=['test', 'train', 'TEST', 'TRAIN', 'training', 'TRAINING'], help='Either test or training', required = True)
 parser.add_argument('-label', dest='path', type=str, help='Label to save output files with', required = True)
-parser.add_argument('-data', dest='datapath', type=str, help='Data path of MNIST dataset [./mnist/]', default = 'mnist/')
+parser.add_argument('-data', dest='datapath', type=str, help='Data path of MNIST or cifar dataset [./mnist/]', default = 'mnist/')
 parser.add_argument('-epochs', dest='epochs', type=int, help='Number of epochs to train data with [1]', default = 1)
 parser.add_argument('-train_size', dest='train_size', type=int, help='Number of inputs to train data each epoch with [60000]', default = 60000)
 parser.add_argument('-test_size', dest='test_size', type=int, help='Number of inputs to test data with [10000]', default = 10000)
@@ -41,6 +41,7 @@ parser.add_argument('-synapse_model', dest = 'syn_model', choices = ['triplet', 
 parser.add_argument('-debug', dest = 'debug', help ='Whether debug information should be printed, plotted and saved. CAUTION: May by storage-consuming! [False]', action='store_true')
 parser.add_argument('-test_label', dest = 'test_label', help ='Label to identify test cas with [None]', default = None, type = str)
 parser.add_argument('-N', dest = 'N', help ='Number of excitatory and inhibitory neurons [400]', default = 400, type = int)
+parser.add_argument('-input', dest = 'input_type', help ='mnist or cifar10 [mnist]', default = "mnist", type = str, choices = ["mnist", "cifar10"])
 
 
 parser.add_argument('-rand_threshold_max', dest='rand_thresh_max', type = float, help='Maximal value of random threshold in mV [0mV]', default = 0.)
@@ -62,7 +63,7 @@ args = parser.parse_args(sys.argv[1:])
 
 test_mode = args.mode.upper() == 'TEST'
 filename_label = args.path
-MNIST_data_path = args.datapath
+input_data_path = args.datapath
 epochs = args.epochs
 train_size = args.train_size
 test_size = args.test_size
@@ -81,6 +82,7 @@ p_dont_send_spike = args.p_dont_send_spike
 clopath = args.syn_model.upper() == 'CLOPATH'
 save_debug_info = args.debug
 test_label = args.test_label
+is_mnist = args.input_type == 'mnist'
 
 if test_label is None:
     test_label = "std"
@@ -106,10 +108,10 @@ for subf in subfolder:
     if not os.path.exists(data_path+subf):
         raise Exception(print_addon+"Directory structure is incompletet! Directory %s is missing!" % (data_path+subf))
 
-summary = '%s\nGeneral information:\n%s\n\ntest_mode = %s\nlabel = %s\nepochs = %d\ntrain size = %d\ntest size = %d\nplasticity during testing = %s\nSynapse model = %s\n' \
-    % (60*'-',60*'-', test_mode, filename_label+"_"+test_label if test_mode else filename_label, epochs, train_size, test_size, plasticity_during_testing, 'clopath' if clopath else 'triplet')
+summary = 'test_mode = %s\nlabel = %s\nepochs = %d\ntrain size = %d\ntest size = %d\nplasticity during testing = %s\nSynapse model = %s\n' \
+    % (test_mode, filename_label+"_"+test_label if test_mode else filename_label, epochs, train_size, test_size, plasticity_during_testing, 'clopath' if clopath else 'triplet')
 
-summary += '\n%s\nNoise information\n%s\n\n' % (60*'-',60*'-')
+summary += '\n'
 if min_rand_theta > 0 and diff_rand_theta > 0:
     summary += 'Minimal random threshold = %.5f\nMaximal random thersold = %.5f\n' % (min_rand_theta, min_rand_theta + diff_rand_theta)
 if noise_v_min > 0 and noise_v_diff > 0:
@@ -218,16 +220,30 @@ def print_progress(j,total, last, num_since_last):
 # load MNIST
 #------------------------------------------------------------------------------
 
-start = time.time()
-training = get_labeled_data(MNIST_data_path + 'training', MNIST_data_path=MNIST_data_path)
-end = time.time()
-print(print_addon+'Time needed to load training set: %.4fs' % (end - start))
+print("Loading dataset...")
+if is_mnist:
+    start = time.time()
+    training = get_labeled_data(input_data_path + 'training', MNIST_data_path=input_data_path)
+    end = time.time()
+    print(print_addon+'Time needed to load training set: %.4fs' % (end - start))
 
-start = time.time()
-testing = get_labeled_data(MNIST_data_path + 'testing', MNIST_data_path=MNIST_data_path, bTrain = False)
-end = time.time()
-print(print_addon+'Time needed to load test set: %.4fs' % (end - start))
-
+    start = time.time()
+    testing = get_labeled_data(input_data_path + 'testing', MNIST_data_path=input_data_path, bTrain = False)
+    end = time.time()
+    print(print_addon+'Time needed to load test set: %.4fs' % (end - start))
+else:
+    import pickle
+    training = {'x' : np.zeros((50000, 3072), dtype=np.ubyte), 'y' : np.zeros((50000,), dtype=np.ubyte)}
+    testing = {'x' : np.zeros((10000, 3072), dtype=np.ubyte), 'y' : np.zeros((10000,), dtype=np.ubyte)}
+    for i in range(5):
+        with open(input_data_path+'/data_batch_%d' % (i+1), 'rb') as file:
+            dict = pickle.load(file, encoding='bytes')
+            training['x'][i*10000:(i+1)*10000,:] = np.array(dict[b'data'], dtype=np.ubyte)
+            training['y'][i*10000:(i+1)*10000] = np.array(dict[b'labels'], dtype=np.ubyte)
+    with open(input_data_path+'/test_batch', 'rb') as file:
+        dict = pickle.load(file, encoding='bytes')
+        testing['x'][:,:] = np.array(dict[b'data'], dtype=np.ubyte)
+        testing['y'][:] = np.array(dict[b'labels'], dtype=np.ubyte)
 
 #------------------------------------------------------------------------------
 # set parameters and equations
@@ -252,7 +268,10 @@ else:
 print_progress_interval = max(int(num_examples / 500), 1)
 
 ending = ''
-n_input = 784
+if is_mnist:
+    n_input = 784
+else:
+    n_input = 32*32*3
 n_e = args.N
 n_i = n_e
 single_example_time =   0.35 * b2.second #
@@ -544,14 +563,17 @@ while j < (int(num_examples)):
     if (not test_mode) or plasticity_during_testing:
         normalize_weights()
     if test_mode:
-        mnist_arr = testing['x'][j%10000,:,:].reshape((n_input))
+        mnist_arr = testing['x'][j%len(testing['x'])].reshape((n_input))
     else:
-        mnist_arr = training['x'][j%60000,:,:].reshape((n_input))
+        mnist_arr = training['x'][j%len(training['x'])].reshape((n_input))
     if salt_pepper_alpha is not None:
         mnist_arr = salt_and_pepper(mnist_arr, salt_pepper_alpha)
     if rectangle_noise_max is not None:
         mnist_arr = remove_rectangle(mnist_arr, rectangle_noise_min, rectangle_noise_max)
-    spike_rates = mnist_arr / 8. *  input_intensity
+    if is_mnist:
+        spike_rates = mnist_arr / 8. *  input_intensity
+    else:
+        spike_rates = mnist_arr / 24. *  input_intensity
     input_groups['Xe'].rates = spike_rates * Hz
     net.run(single_example_time, report=None)
 
@@ -567,10 +589,17 @@ while j < (int(num_examples)):
         net.run(resting_time)
     else:
         result_monitor[j,:] = current_spike_count
-        if test_mode:
-            input_numbers[j] = testing['y'][j%10000][0]
+        if is_mnist:
+            if test_mode:
+                input_numbers[j] = testing['y'][j%len(testing['y'])][0]
+            else:
+                input_numbers[j] = training['y'][j%len(training['y'])][0]
         else:
-            input_numbers[j] = training['y'][j%60000][0]
+            if test_mode:
+                input_numbers[j] = testing['y'][j%len(testing['y'])]
+            else:
+                input_numbers[j] = training['y'][j%len(training['y'])]
+
         outputNumbers[j,:] = get_recognized_number_ranking(assignments, result_monitor[j,:])
 
         if j % print_progress_interval == print_progress_interval - 1:
