@@ -319,7 +319,7 @@ else:
 
     theta_plus_e = 0.05 * b2.mV
     
-    summary += "tc_theta = %.5E\theta_plus_e = %.5E" % (tc_theta, theta_plus_e) 
+    summary += "\ntc_theta = %.5E\ntheta_plus_e = %.5E\n" % (tc_theta, theta_plus_e) 
 
     if v_quant is not None:
         reset_e_str = 'x = v_reset_e; theta += theta_plus_e; timer = 0*ms'
@@ -395,7 +395,7 @@ else:
     A_LTD = 1e-9/b2.mV # 1e-6
     A_LTP = 1e-4/(b2.mV*b2.mV) # 1.5*1e-4
     x_reset = 1*b2.ms
-    summary += "A_LTD = %.5E\nA_LTP = %.5E\n" % (A_LTD, A_LTP) 
+    summary += "A_LTD = %.5E\nA_LTP = %.5E\n" % (A_LTD*b2.mV, A_LTP*b2.mV*b2.mV) 
     theta_minus = v_reset_e
     theta_plus = v_reset_e
     eqs_stdp_ee = '''
