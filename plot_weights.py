@@ -32,6 +32,7 @@ def show_weights(filename, savename, wmax, arr = None, fignum = 1223, is_mnist =
         plt.colorbar()
     else:
         plt.imshow(rearranged_mat, extent = [0, n,0,n])
+    plt.title("Gewichte")
     plt.xticks(np.arange(0.5,n,1),range(1,n+1),fontsize = 7)
     plt.yticks(np.arange(0.5,n,1),range(1,n+1),fontsize = 7)
     plt.savefig(savename)
