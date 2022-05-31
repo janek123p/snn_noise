@@ -310,12 +310,17 @@ if test_mode and not plasticity_during_testing:
     else:
         reset_e_str = 'v = v_reset_e; timer = 0*ms'
 else:
-    if clopath:
-        tc_theta = 5e7 * b2.ms
-        theta_plus_e = 0.05 * b2.mV
-    else:
+    if n_e <= 400 and not clopath:
         tc_theta = 1e7 * b2.ms
-        theta_plus_e = 0.05 * b2.mV
+    elif n_e <= 400 and clopath:
+        tc_theta = 3e7 * b2.ms
+    elif n_e > 400:
+        tc_theta = 5e7 * b2.ms
+
+    theta_plus_e = 0.05 * b2.mV
+    
+    summary += "tc_theta = %.5E\theta_plus_e = %.5E" % (tc_theta, theta_plus_e) 
+
     if v_quant is not None:
         reset_e_str = 'x = v_reset_e; theta += theta_plus_e; timer = 0*ms'
     else:        
@@ -390,6 +395,7 @@ else:
     A_LTD = 1e-9/b2.mV # 1e-6
     A_LTP = 1e-4/(b2.mV*b2.mV) # 1.5*1e-4
     x_reset = 1*b2.ms
+    summary += "A_LTD = %.5E\nA_LTP = %.5E\n" % (A_LTD, A_LTP) 
     theta_minus = v_reset_e
     theta_plus = v_reset_e
     eqs_stdp_ee = '''
