@@ -6,3 +6,11 @@ __pycache__/
 mnist
 fashion_mnist
 cifar_10
+evaluate_all.py
+collect_results.py
+plot_performance.py
+plot_weights.py
+plot_mnist.py
+run_simulations.py
+test_sigma_noise.py
+results.xlsx
