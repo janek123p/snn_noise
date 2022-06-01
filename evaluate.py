@@ -139,7 +139,7 @@ if __name__ == '__main__':
         output = int(test_results[i])
         classification_matrix[desired, output] += 1
 
-    np.save(path+'meta/classification_matrix_%s.npy' % ('std' if test_label is None else test_label), classification_matrix)
+    np.save(path+'/meta/classification_matrix_%s.npy' % ('std' if test_label is None else test_label), classification_matrix)
 
     for i in range(10):
         classification_matrix[i,:] /= np.sum(classification_matrix[i,:])
