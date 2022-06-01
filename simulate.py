@@ -115,7 +115,7 @@ summary += '\n'
 if min_rand_theta > 0 and diff_rand_theta > 0:
     summary += 'Minimal random threshold = %.5f\nMaximal random thersold = %.5f\n' % (min_rand_theta, min_rand_theta + diff_rand_theta)
 if noise_v_min > 0 and noise_v_diff > 0:
-    summary += 'Minimal random adjustment of the membrane voltage = %.5f\nMaximal random adjustment of the membrane voltage %.5f' % (noise_v_min, noise_v_min + noise_v_diff)
+    summary += 'Minimal random adjustment of the membrane voltage = %.5f\nMaximal random adjustment of the membrane voltage %.5f\n' % (noise_v_min, noise_v_min + noise_v_diff)
 if v_quant is not None:
     summary += 'Number of bits to quantify membrane voltage: %d\n' % v_quant
 if w_quant is not None:
@@ -125,9 +125,9 @@ if salt_pepper_alpha is not None:
 if rectangle_noise_max is not None:
     summary += 'Minimal width of removed rectangle: %d\nMinimal width of removed rectangle: %d\n' % (rectangle_noise_min, rectangle_noise_max)
 if p_dont_send_spike is not None:
-    summary += 'Propability that a presynaptic spike does not lead to an increase of the postsynaptic conductance: %.4f' % (p_dont_send_spike)
+    summary += 'Propability that a presynaptic spike does not lead to an increase of the postsynaptic conductance: %.4f\n' % (p_dont_send_spike)
 if abs(sigma_v/b2.mV) > 1e-10:
-    summary += 'Normally distributed noise of the membrane voltage: %.6f mV/dt' % sigma_v  
+    summary += 'Normally distributed noise of the membrane voltage: %.6f mV/dt\n' % sigma_v  
 
 b2.prefs.codegen.target = 'cython'
 b2.defaultclock.dt = 0.5 * b2.ms
