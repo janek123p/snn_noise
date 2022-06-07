@@ -5,6 +5,7 @@ nohup.out
 __pycache__/
 mnist
 fashion_mnist
+n_mnist
 cifar_10
 evaluate_all.py
 collect_results.py
@@ -14,3 +15,4 @@ plot_mnist.py
 run_simulations.py
 test_sigma_noise.py
 results.xlsx
+plots/
