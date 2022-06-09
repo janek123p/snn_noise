@@ -216,6 +216,20 @@ def print_progress(j,total, last, num_since_last):
     duration = time.time() - last
     print("%d of %d [%.2fs/it]" % (j,total, duration/num_since_last))
 
+
+def quantile_sorted(sorted_arr, quantile):
+    max_index = len(sorted_arr) - 1
+    quantile_index = max_index * quantile
+    quantile_index_int = int(quantile_index)
+    quantile_index_fractional = quantile_index - quantile_index_int
+
+    quantile_lower = sorted_arr[quantile_index_int]
+    if quantile_index_fractional > 0:
+        quantile_upper = sorted_arr[quantile_index_int + 1]
+        return quantile_lower + (quantile_upper - quantile_lower) * quantile_index_fractional
+    else:
+        return quantile_lower 
+
 #------------------------------------------------------------------------------
 # load MNIST
 #------------------------------------------------------------------------------
@@ -244,6 +258,7 @@ else:
         dict = pickle.load(file, encoding='bytes')
         testing['x'][:,:] = np.array(dict[b'data'], dtype=np.ubyte)
         testing['y'][:] = np.array(dict[b'labels'], dtype=np.ubyte)
+
 
 #------------------------------------------------------------------------------
 # set parameters and equations
@@ -335,10 +350,12 @@ else:
         tc_theta = 3e7 * b2.ms
     elif n_e > 400:
         tc_theta = 5e7 * b2.ms
+    elif n_e > 1600:
+        tc_theta = 1e8 * b2.ms
 
     theta_plus_e = 0.05 * b2.mV
     
-    summary += "\ntc_theta = %.5E\ntheta_plus_e = %.5E\n" % (tc_theta, theta_plus_e) 
+    summary += "\ntc_theta = %.5Ems\ntheta_plus_e = %.5EmV\n" % (tc_theta/b2.ms, theta_plus_e/b2.mV) 
 
     if v_quant is not None:
         reset_e_str = 'x = v_reset_e; theta += theta_plus_e; timer = 0*ms'
@@ -527,6 +544,38 @@ with open(data_path+'summary_%s.txt' % ('test'+"_"+test_label if test_mode else 
     file.write(summary)
 
 #------------------------------------------------------------------------------
+# Network operation to measure weight and voltage changes each timestep
+#------------------------------------------------------------------------------
+
+if save_debug_info:
+    weights = np.copy(connections['XeAe'].w)
+    voltages = np.copy(neuron_groups['Ae'].v_)
+
+    diff_w = []
+    diff_v = []
+
+    @b2.network_operation()
+    def measure_changes(t):
+        global weights, voltages, diff_w, diff_v, i_before
+
+        if t > 0.51*b2.ms:
+            diff_weights = np.abs(connections['XeAe'].w - weights)
+            diff_voltages = np.abs(neuron_groups['Ae'].v_ - voltages)
+
+            remove = np.logical_or(np.logical_or(np.abs(neuron_groups['Ae'].v - v_reset_e) > 1e-5 * b2.mV, np.abs(v_thresh_e - voltages*b2.volt) > 5 * b2.mV ), diff_voltages > 1e-30)
+
+            diff_weights = np.sort(diff_weights[diff_weights > 1e-30])
+            diff_voltages = np.sort(diff_voltages[remove] * 1000)
+            if len(diff_weights) > 0:
+                diff_w.extend([quantile_sorted(diff_weights, p) for p in np.arange(0.,1.+1e-5,1e-1)])
+            if len(diff_voltages) > 0:
+                diff_v.extend([quantile_sorted(diff_voltages, p) for p in np.arange(0.,1.+1e-5,1e-1)])
+
+        weights = np.copy(connections['XeAe'].w)
+        voltages = np.copy(neuron_groups['Ae'].v_)
+        
+
+#------------------------------------------------------------------------------
 # run the simulation and set inputs
 #------------------------------------------------------------------------------
 
@@ -534,6 +583,9 @@ net = Network()
 for obj_list in [neuron_groups, input_groups, connections, spike_counters]:
     for key in obj_list:
         net.add(obj_list[key])
+
+if save_debug_info:
+    net.add(measure_changes)
 
 previous_spike_count = np.zeros(n_e)
 assignments = np.zeros(n_e)
@@ -645,5 +697,75 @@ np.save(data_path + 'activity/inputNumbers_' + suffix, input_numbers)
 if not test_mode:
     print('Saving performance course...')
     np.save(data_path+'meta/performance', performance)
+
+if save_debug_info:
+    print("Saving debug plots...")
+    print("Sorting arrays of length %d and %d" % (len(diff_w), len(diff_v)))
+    diff_w = np.sort(diff_w)
+    diff_v = np.sort(diff_v)
+
+    print("Calculating quantiles...")
+    x_vals_w = np.arange(start=0, stop=1+1e-6, step=1e-4)
+    y_vals_w = np.array([quantile_sorted(diff_w, x) for x in x_vals_w])
+    w_bits = [5,6,7,8]
+    
+    x_vals_v = np.arange(start=0, stop=1+1e-6, step=1e-4)
+    y_vals_v = np.array([quantile_sorted(diff_v, x) for x in x_vals_v])
+    v_bits = [0,1,2,3,4]
+    print("Plotting...")
+    
+    plt.rcParams['axes.axisbelow'] = True
+    plt.style.use('bmh')
+
+    accounted_w = [np.sum(diff_w >= pow(2,-val-1))/len(diff_w) for val in w_bits]
+
+    plt.plot(w_bits, accounted_w)
+    plt.xlabel("Fractional quantization [Bit]")
+    plt.ylabel("Proportion of weight updates\nincluded with this quantization")
+    plt.title("Effect of synaptic weight quantization\non the weight update")
+    plt.xticks(w_bits)
+    plt.savefig(data_path+'plots/w_change_alt.png', dpi = 600, bbox_inches="tight")
+    plt.clf()
+
+    accounted_v = [np.sum(diff_v >= pow(2,-val-1))/len(diff_w) for val in v_bits]
+
+    plt.plot(v_bits, accounted_v)
+    plt.xlabel("Fractional quantization [Bit]")
+    plt.ylabel("Proportion of voltage updates\nincluded with this quantization")
+    plt.title("Effect of membrane voltage quantization\non the voltage update")
+    plt.xticks(v_bits)
+    plt.savefig(data_path+'plots/v_change_alt.png', dpi = 600, bbox_inches="tight")
+    plt.clf()
+
+    plt.grid(True)
+    plt.plot(x_vals_v, y_vals_v, label="measured voltage changes", zorder=0)
+    for v_bit in v_bits:
+        val = pow(2,-v_bit-1)
+        plt.scatter([x_vals_v[np.argmin(np.abs(y_vals_v - val))]], [val], label="%d Bits" % v_bit, marker='x', zorder=1)
+    plt.yscale('log')
+    plt.xlabel("p")
+    plt.xticks(np.arange(start=0, stop=1+1e-3, step=1e-1))
+    plt.ylabel("p-quantile [mV]")
+    plt.title('Distribution of membrane voltage\nchanges per timestep')
+    plt.legend()
+    plt.savefig(data_path+'plots/v_change.png', dpi = 600, bbox_inches="tight")
+    plt.clf()
+
+    plt.grid(True)
+    plt.plot(x_vals_w, y_vals_w, label="measured weight changes", zorder=0)
+    for w_bit in w_bits:
+        val = pow(2,-w_bit-1)
+        plt.scatter([x_vals_w[np.argmin(np.abs(y_vals_w - val))]], [val], label="%d Bits" % w_bit, marker='x', zorder=1)
+    plt.yscale('log')
+    plt.xlabel("p")
+    plt.ylabel("p-quantile [nS]")
+    plt.xticks(np.arange(start=0, stop=1+1e-3, step=1e-1))
+    plt.title('Distribution of weight changes\nper timestep')
+    plt.legend()
+    plt.savefig(data_path+'plots/w_change.png', dpi = 600, bbox_inches="tight")
+    plt.clf()
+
+    np.savez(data_path+'meta/w_change_data.npz', w_bits = w_bits, accounted_w = accounted_w, x_vals_w=x_vals_w, y_vals_w = y_vals_w)
+    np.savez(data_path+'meta/v_change_data.npz', v_bits = v_bits, accounted_v = accounted_v, x_vals_v=x_vals_v, y_vals_v = y_vals_v)
 
 print(print_addon+'Finished!')
