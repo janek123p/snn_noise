@@ -147,8 +147,9 @@ if __name__ == '__main__':
 
     plt.imshow(np.flip(classification_matrix.T, axis = 0), interpolation="nearest", cmap = cmap.get_cmap('hot_r'), aspect='equal', extent = [-0.5, 9.5,-0.5,9.5])
     plt.colorbar()
-    plt.xlabel('Desired output')
-    plt.ylabel('Prediction')
+    plt.xlabel('Label')
+    plt.ylabel('Vorhersage des Netzwerks')
+    plt.title('Verwirrungsmatrix')
     plt.xticks(np.arange(0,10,1))
     plt.yticks(np.arange(0,10,1))
 
