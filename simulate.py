@@ -9,6 +9,8 @@ modified by Janek Paessens
 import sys
 import argparse
 import os
+import math
+import random
 import numpy as np
 import time
 from brian2 import *
@@ -53,6 +55,7 @@ of membrane voltage per timestep for excitatory neurons [0mV]', default = 0.)
 parser.add_argument('-voltage_noise_sigma', dest='sigma_v', type = float, help='Standard deviation of the noise added to the membrane voltage every timestep in mV [0]', default = 0.)
 parser.add_argument('-membrane_voltage_quant', dest='membrane_voltage_quant', type = int, help='Number of bits to quantify membane voltage of excitatory neurons [None]', default = None)
 parser.add_argument('-weight_quant', dest='weight_quant', type = int, help='Number of bits to quantify weights [None]', default = None)
+parser.add_argument('-stoch_weight_quant', dest='stoch_weight_quant', type = int, help='Number of bits to quantify weights. Quantization is performed in a stochastic manner. [None]', default = None)
 parser.add_argument('-salt_and_pepper_alpha', dest='salt_pepper_alpha', type = float, help='Propability that a pixel in the input image gets replaced by 0 or 255 [None]', default = None)
 parser.add_argument('-rectangle_noise_min', dest='rectangle_noise_min', type = int, help='Minimal width and height of the rectangle that is removed from the input image [None]', default = None)
 parser.add_argument('-rectangle_noise_max', dest='rectangle_noise_max', type = int, help='Maximal width and height of the rectangle that is removed from the input image [None]', default = None)
@@ -75,6 +78,7 @@ noise_v_diff = args.noise_membrane_voltage_max - noise_v_min
 sigma_v = args.sigma_v*b2.mV
 v_quant = args.membrane_voltage_quant
 w_quant = args.weight_quant
+stoch_w_quant = args.stoch_weight_quant
 salt_pepper_alpha = args.salt_pepper_alpha
 rectangle_noise_min = args.rectangle_noise_min
 rectangle_noise_max = args.rectangle_noise_max
@@ -86,6 +90,9 @@ is_mnist = args.input_type == 'mnist'
 
 if test_label is None:
     test_label = "std"
+
+if w_quant is not None and stoch_w_quant is not None:
+    raise Exception("It can only be on of the following quantizations be active: Either weight_quant or stoch_weight_quant")
 
 # if either max (or min) is None set max (min) to min (max)
 # if both are None they stay None
@@ -120,6 +127,8 @@ if v_quant is not None:
     summary += 'Number of bits to quantify membrane voltage: %d\n' % v_quant
 if w_quant is not None:
     summary += 'Number of bits to quantify weights: %d\n' % w_quant
+if stoch_w_quant is not None:
+    summary += 'Number of bits to quantify weights stochastically: %d\n' % stoch_w_quant
 if salt_pepper_alpha is not None:
     summary += 'Propability of salt or pepper in input image: %.4f\n' % salt_pepper_alpha
 if rectangle_noise_max is not None:
@@ -167,6 +176,11 @@ def save_theta(ending = ''):
     for pop_name in population_names:
         np.save(data_path + 'weights/theta_' + pop_name + ending, neuron_groups[pop_name + 'e'].theta)
 
+def stoch_rounding_arr(arr, round_val):
+    arr2 = round_val * arr
+    floor_arr = np.floor(arr2)
+    return (floor_arr + ((arr2-floor_arr) > np.random.random(arr.shape))) / round_val
+
 def normalize_weights():
     connName = 'XeAe'
     len_source = len(connections[connName].source)
@@ -180,6 +194,8 @@ def normalize_weights():
         temp_conn[:,j] *= colFactors[j]
     if w_quant is not None:
         temp_conn = np.round(temp_conn * round_val_w) / round_val_w
+    if stoch_w_quant is not None:
+        temp_conn = stoch_rounding_arr(temp_conn, round_val_w)
     connections[connName].w = temp_conn[connections[connName].i, connections[connName].j]
 
 def get_current_performance(current_example_num):
@@ -329,14 +345,39 @@ offset = 20.0*b2.mV
 
 if w_quant is not None:
     round_val_w = 2**w_quant
+if stoch_w_quant is not None:
+    round_val_w = 2**stoch_w_quant
 if v_quant is not None:
     round_val_v = 2**v_quant
 
-current_dir = os.path.abspath(os.path.dirname(__file__))
+"""current_dir = os.path.abspath(os.path.dirname(__file__))
 @b2.implementation('cython', 'from cython_functions cimport round_val', sources = [os.path.join(current_dir, 'cython_functions.pyx')])
 @b2.check_units(x=1,val=1, result=1)
 def round_val(x, val):
+    return np.round(x*val)/val"""
+
+@b2.implementation('cython', '''
+    cdef double round_val(double x,int val):
+        return round(x*val)/val
+    ''')
+@b2.check_units(x=1,val=1, result=1)
+def round_val(x, val):
     return np.round(x*val)/val
+
+@b2.implementation('cython', '''
+    from random import random
+
+    cdef stoch_rounding(double x, int val):
+        value = x * val
+        floor_val = int(value)
+        return (floor_val + ((value - floor_val) > random())) / val
+    ''')
+@b2.check_units(x=1,val=1, result=1)
+def stoch_rounding(x, val):
+    value = x * val
+    floor_val = math.floor(val)
+    return (floor_val + ((value - floor_val) > random.random())) / val
+
 
 if test_mode and not plasticity_during_testing:
     if v_quant is not None:
@@ -420,12 +461,15 @@ if not clopath:
                     dpost1/dt  = -post1/(tc_post_1_ee)              : 1 (event-driven)
                     dpost2/dt  = -post2/(tc_post_2_ee)              : 1 (event-driven)
                 '''
-    if w_quant is None:
-        eqs_stdp_pre_ee = 'pre = 1.; w = clip(w - nu_ee_pre * post1, 0, wmax_ee)'
-        eqs_stdp_post_ee = 'post2before = post2; w = clip(w + nu_ee_post * pre * post2before, 0, wmax_ee); post1 = 1.; post2 = 1.'
-    else:
+    if w_quant is not None:
         eqs_stdp_pre_ee = 'pre = 1.; w = round_val(clip(w - nu_ee_pre * post1, 0, wmax_ee), round_val_w)'
         eqs_stdp_post_ee = 'post2before = post2; w = round_val(clip(w + nu_ee_post * pre * post2before, 0, wmax_ee), round_val_w); post1 = 1.; post2 = 1.'
+    elif stoch_w_quant is not None:
+        eqs_stdp_pre_ee = 'pre = 1.; w = stoch_rounding(clip(w - nu_ee_pre * post1, 0, wmax_ee), round_val_w)'
+        eqs_stdp_post_ee = 'post2before = post2; w = stoch_rounding(clip(w + nu_ee_post * pre * post2before, 0, wmax_ee), round_val_w); post1 = 1.; post2 = 1.'        
+    else:
+        eqs_stdp_pre_ee = 'pre = 1.; w = clip(w - nu_ee_pre * post1, 0, wmax_ee)'
+        eqs_stdp_post_ee = 'post2before = post2; w = clip(w + nu_ee_post * pre * post2before, 0, wmax_ee); post1 = 1.; post2 = 1.'
 else:
     tau_x = 15 * b2.ms
     A_LTD = 1e-9/b2.mV # 1e-6
@@ -439,12 +483,15 @@ else:
                 '''
 
     # POTENTIATION ONLY WORKS IF theta_plus = v_reset_e ==> OTHERWISE THE EQUATIONS BELOW ARE INCORRECT
-    if w_quant is None:
-        eqs_stdp_pre_ee = 'xpre = xpre + x_reset/tau_x; w = clip(w - A_LTD * (u_minus_post - theta_minus) * int(u_minus_post > theta_minus), 0, wmax_ee)'
-        eqs_stdp_post_ee = 'w = clip(w + A_LTP * xpre * (v_post - theta_plus) * int(v_post > theta_plus) * (u_plus_post - theta_minus) * int(u_plus_post > theta_minus), 0, wmax_ee)'
-    else:
+    if w_quant is not None:
         eqs_stdp_pre_ee = 'xpre = xpre + x_reset/tau_x; w = round_val(clip(w - A_LTD * (u_minus_post - theta_minus) * int(u_minus_post > theta_minus), 0, wmax_ee), round_val_w)'
         eqs_stdp_post_ee = 'w = round_val(clip(w + A_LTP * xpre * (v_post - theta_plus) * int(v_post > theta_plus) * (u_plus_post - theta_minus) * int(u_plus_post > theta_minus), 0, wmax_ee) , round_val_w) '
+    elif stoch_w_quant is not None:
+        eqs_stdp_pre_ee = 'xpre = xpre + x_reset/tau_x; w = stoch_rounding(clip(w - A_LTD * (u_minus_post - theta_minus) * int(u_minus_post > theta_minus), 0, wmax_ee), round_val_w)'
+        eqs_stdp_post_ee = 'w = stoch_rounding(clip(w + A_LTP * xpre * (v_post - theta_plus) * int(v_post > theta_plus) * (u_plus_post - theta_minus) * int(u_plus_post > theta_minus), 0, wmax_ee) , round_val_w) '
+    else:
+        eqs_stdp_pre_ee = 'xpre = xpre + x_reset/tau_x; w = clip(w - A_LTD * (u_minus_post - theta_minus) * int(u_minus_post > theta_minus), 0, wmax_ee)'
+        eqs_stdp_post_ee = 'w = clip(w + A_LTP * xpre * (v_post - theta_plus) * int(v_post > theta_plus) * (u_plus_post - theta_minus) * int(u_plus_post > theta_minus), 0, wmax_ee)'
 
 
 b2.ion()
@@ -529,10 +576,12 @@ for name in input_connection_names:
 
         connections[connName].connect(True) # all-to-all connection
         connections[connName].delay = 'minDelay + rand() * deltaDelay'
-        if w_quant is None:
-            connections[connName].w = weightMatrix[connections[connName].i, connections[connName].j]
-        else:
+        if w_quant is not None:
             connections[connName].w = np.round(weightMatrix[connections[connName].i, connections[connName].j] * round_val_w) / round_val_w
+        elif stoch_w_quant is not None:
+            connections[connName].w = stoch_rounding_arr(weightMatrix[connections[connName].i, connections[connName].j], round_val_w)
+        else:
+            connections[connName].w = weightMatrix[connections[connName].i, connections[connName].j]
 
 
     
