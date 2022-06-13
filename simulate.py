@@ -12,6 +12,7 @@ import os
 import math
 import random
 import numpy as np
+import scipy.stats as stat
 import time
 from brian2 import *
 import os
@@ -61,6 +62,8 @@ parser.add_argument('-rectangle_noise_min', dest='rectangle_noise_min', type = i
 parser.add_argument('-rectangle_noise_max', dest='rectangle_noise_max', type = int, help='Maximal width and height of the rectangle that is removed from the input image [None]', default = None)
 parser.add_argument('-p_dont_send_spike', dest='p_dont_send_spike', type = float, help='Propability that a spike in excitatory layer occurs without increasing\
 the postsynaptic conductance in the inhibitory layer [None]', default = None)
+parser.add_argument('-sigma_heterogenity', dest='sigma_het', type = float, help='Standard deviation of neural heterogenity as proportion of the mean value [None]', default = None)
+
 
 args = parser.parse_args(sys.argv[1:])
 
@@ -76,6 +79,7 @@ diff_rand_theta = args.rand_thresh_max - min_rand_theta
 noise_v_min = args.noise_membrane_voltage_min
 noise_v_diff = args.noise_membrane_voltage_max - noise_v_min
 sigma_v = args.sigma_v*b2.mV
+sigma_het = args.sigma_het
 v_quant = args.membrane_voltage_quant
 w_quant = args.weight_quant
 stoch_w_quant = args.stoch_weight_quant
@@ -137,6 +141,9 @@ if p_dont_send_spike is not None:
     summary += 'Propability that a presynaptic spike does not lead to an increase of the postsynaptic conductance: %.4f\n' % (p_dont_send_spike)
 if abs(sigma_v/b2.mV) > 1e-10:
     summary += 'Normally distributed noise of the membrane voltage: %.6f mV/dt\n' % sigma_v  
+if sigma_het is not None:
+    summary += 'Standard deviation of neural heterogenity as proportion of the mean value: %.3f \n' % sigma_v  
+
 
 b2.prefs.codegen.target = 'cython'
 b2.defaultclock.dt = 0.5 * b2.ms
@@ -342,6 +349,9 @@ exp_ee_pre = 0.2
 exp_ee_post = exp_ee_pre
 STDP_offset = 0.4
 offset = 20.0*b2.mV
+tau = 100 * b2.ms
+tau_ge = 1 * b2.ms
+tau_gi = 2 * b2.ms
 
 if w_quant is not None:
     round_val_w = 2**w_quant
@@ -414,25 +424,31 @@ v_reset_i_str = 'v=v_reset_i'
 
 if v_quant is not None:
     neuron_eqs_e = '''
-            dx/dt = ((v_rest_e - x) + (I_synE+I_synI) / nS) / (100*ms) + (noise_v_min*mV + rand()*noise_v_diff * mV)/dt + sigma_v*sqrt(dt)*xi/dt  : volt (unless refractory)
+            dx/dt = ((v_rest_e - x) + (I_synE+I_synI) / nS) / tau + (noise_v_min*mV + rand()*noise_v_diff * mV)/dt + sigma_v*sqrt(dt)*xi/dt  : volt (unless refractory)
             v = round_val(x/mV , round_val_v) * mV                  : volt 
             I_synE = ge * nS *         -v                           : amp
             I_synI = gi * nS * (-100.*mV-v) * int(v > -100.*mV)     : amp
-            dge/dt = -ge/(1.0*ms)                                   : 1
-            dgi/dt = -gi/(2.0*ms)                                   : 1
+            dge/dt = -ge/tau_ge                                     : 1
+            dgi/dt = -gi/tau_gi                                     : 1
             dtimer/dt = 1                                           : second
-            rand_theta                                              :volt
+            rand_theta                                              : volt
             '''
 else:
     neuron_eqs_e = '''
-            dv/dt = ((v_rest_e - v) + (I_synE+I_synI) / nS) / (100*ms) + (noise_v_min*mV + rand()*noise_v_diff * mV)/dt + sigma_v*sqrt(dt)*xi/dt : volt (unless refractory)
+            dv/dt = ((v_rest_e - v) + (I_synE+I_synI) / nS) / tau + (noise_v_min*mV + rand()*noise_v_diff * mV)/dt + sigma_v*sqrt(dt)*xi/dt : volt (unless refractory)
             I_synE = ge * nS *         -v                           : amp
             I_synI = gi * nS * (-100.*mV-v) * int(v > -100.*mV)     : amp
-            dge/dt = -ge/(1.0*ms)                                   : 1
-            dgi/dt = -gi/(2.0*ms)                                   : 1
+            dge/dt = -ge/tau_ge                                     : 1
+            dgi/dt = -gi/tau_gi                                     : 1
             dtimer/dt = 1                                           : second
-            rand_theta                                              :volt
+            rand_theta                                              : volt
             '''
+
+if sigma_het is not None:
+    neuron_eqs_e += '''\ntau : second
+                        tau_ge : second
+                        tau_gi : second
+                        refrac_e : second'''
 
 if test_mode and not plasticity_during_testing:
     neuron_eqs_e += '\n  theta      :volt'
@@ -502,8 +518,10 @@ connections = {}
 spike_counters = {}
 result_monitor = np.zeros((int(num_examples),n_e))
 
-neuron_groups['Ae'] = b2.NeuronGroup(n_e*len(population_names), neuron_eqs_e, threshold= v_thresh_e_str, refractory= refrac_e, reset= reset_e_str, method='euler')
-neuron_groups['Ai'] = b2.NeuronGroup(n_i*len(population_names), neuron_eqs_i, threshold= v_thresh_i_str, refractory= refrac_i, reset= v_reset_i_str, method='euler')
+neuron_groups['Ae'] = b2.NeuronGroup(n_e*len(population_names), neuron_eqs_e, threshold= v_thresh_e_str,
+    refractory= refrac_e if sigma_het is None else 'refrac_e', reset= reset_e_str, method='euler')
+neuron_groups['Ai'] = b2.NeuronGroup(n_i*len(population_names), neuron_eqs_i, threshold= v_thresh_i_str,
+    refractory= refrac_i, reset= v_reset_i_str, method='euler')
 
 #------------------------------------------------------------------------------
 # create network population and recurrent connections
@@ -516,6 +534,40 @@ for subgroup_n, name in enumerate(population_names):
     else:
         neuron_groups[name+'e'].v = v_rest_e - 40. * b2.mV
     neuron_groups[name+'i'].v = v_rest_i - 40. * b2.mV
+    
+    if sigma_het is not None:
+        def truncated_normal_values(mean, std_proportion, lower, upper, n):
+            X = stat.truncnorm((lower-mean) / (std_proportion * mean), (upper-mean) / (std_proportion * mean), loc = mean, scale = std_proportion * mean)
+            return np.array(X.rvs(n))
+
+        neuron_groups[name+'e'].tau = truncated_normal_values(tau/b2.ms, sigma_het, 20, 1e9, n_e) * b2.ms
+        neuron_groups[name+'e'].tau_ge = truncated_normal_values(tau_ge/b2.ms, sigma_het, 0.2, 1e9, n_e) * b2.ms
+        neuron_groups[name+'e'].tau_gi = truncated_normal_values(tau_gi/b2.ms, sigma_het, 0.4, 1e9, n_e) * b2.ms
+        neuron_groups[name+'e'].refrac_e = truncated_normal_values(refrac_e/b2.ms, sigma_het, 1, 1e9, n_e) * b2.ms
+
+        plt.hist(neuron_groups[name+'e'].tau/b2.ms, bins = 20)
+        plt.xlabel("τ [ms] (Zeitkonstante exz. Neuronen)")
+        plt.ylabel("Häufigkeit")
+        plt.savefig(data_path+'plots/tau_hist.png', dpi = 600)
+        plt.clf()
+
+        plt.hist(neuron_groups[name+'e'].tau_ge/b2.ms, bins = 20)
+        plt.xlabel("τ_ge [ms] (Zeitkonstante der exz. Leitfähigkeit)")
+        plt.ylabel("Häufigkeit")
+        plt.savefig(data_path+'plots/tau_ge_hist.png', dpi = 600)
+        plt.clf()
+
+        plt.hist(neuron_groups[name+'e'].tau_gi/b2.ms, bins = 20)
+        plt.xlabel("τ_gi [ms] (Zeitkonstante der inh. Leitfähigkeit)")
+        plt.ylabel("Häufigkeit")
+        plt.savefig(data_path+'plots/tau_gi_hist.png', dpi = 600)
+        plt.clf()
+
+        plt.hist(neuron_groups[name+'e'].refrac_e/b2.ms, bins = 20)
+        plt.xlabel("Refraktärphase [ms]")
+        plt.ylabel("Häufigkeit")
+        plt.savefig(data_path+'plots/refrac_hist.png', dpi = 600)
+        plt.clf()
 
     if test_mode or weight_path[-8:] == 'weights/':
         neuron_groups[name+'e'].theta = np.load(weight_path + 'theta_' + name + ending + '.npy') * b2.volt
