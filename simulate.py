@@ -702,10 +702,10 @@ j = 0
 last_time = time.time()
 saved = False
 
-if salt_pepper_alpha is not None:
+if salt_pepper_alpha is not None and not test_mode:
     print("Plotting examples for salt and pepper noisy images...")
     plot_salt_and_pepper_examples(training['x'], 3,5, salt_pepper_alpha, data_path)
-if rectangle_noise_max is not None:
+if rectangle_noise_max is not None and not test_mode:
     print("Plotting examples for images with removed rectangle...")
     plot_remove_rectangle_examples(training['x'], 3,5, rectangle_noise_min, rectangle_noise_max, data_path)
 
