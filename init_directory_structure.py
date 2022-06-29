@@ -10,6 +10,7 @@ import pylab
 import sys
 import argparse
 import os
+from global_settings import settings
         
 def sparsenMatrix(baseMatrix, pConn):
     weightMatrix = np.zeros(baseMatrix.shape)
@@ -32,7 +33,7 @@ def create_weights(label, N = 400, is_mnist=True):
         nInput = 3072
     nE = N
     nI = nE 
-    dataPath = '/mnt/data4tb/paessens/simulations/'+label+'/random/'
+    dataPath = settings["simulation_base_path"]+label+'/random/'
     weight = {}
     weight['ee_input'] = 0.3 
     weight['ei_input'] = 0.2 
@@ -88,13 +89,13 @@ if __name__ == "__main__":
     label = args.label
     is_mnist = args.input_type == 'mnist'
 
-    if os.path.exists('mnt/data4tb/paessens/simulations/%s' % label):
+    if os.path.exists('%s%s' % (settings["simulation_base_path"], label)):
         raise Exception('Directory already exists! State a different label or delete direcotry!')
     
     print('Creating directory structure...')
     subfolder = ['plots', 'weights', 'activity', 'random', 'meta']
     for subf in subfolder:
-        os.makedirs('/mnt/data4tb/paessens/simulations/%s/%s' % (label, subf))
+        os.makedirs('%s%s/%s' % (settings["simulation_base_path"],label, subf))
 
     create_weights(label, args.N, is_mnist)
     

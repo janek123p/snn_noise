@@ -18,6 +18,7 @@ from brian2 import *
 import os
 import brian2 as b2
 from brian2tools import *
+from global_settings import settings
 
 # imports from own modules
 from functions.data import get_labeled_data
@@ -135,7 +136,7 @@ if test_mode:
 else:
     print_addon = filename_label+": "
 
-data_path = '/mnt/data4tb/paessens/simulations/'+filename_label + '/'
+data_path = settings['simulation_base_path']+filename_label + '/'
 if not os.path.exists(data_path):
     raise Exception(
         print_addon+"Directory %s does not exist! Create it before running this script!" % data_path)

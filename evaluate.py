@@ -11,6 +11,7 @@ from brian2 import *
 import sys
 import argparse
 import os
+from global_settings import settings
 
 from sklearn.svm import SVC 
 from functions.data import get_labeled_data
@@ -66,7 +67,7 @@ if __name__ == '__main__':
     test_label = args.test_label
     num_assign = args.assignment_number
     svm = args.svm
-    path = '/mnt/data4tb/paessens/simulations/%s' % label
+    path = '%s%s' % (settings["simulation_base_path"], label)
 
     if not os.path.exists(path):
         raise Exception("No directory (%s) corresponding to the given label does exist!" % path)
