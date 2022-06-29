@@ -609,29 +609,30 @@ for subgroup_n, name in enumerate(population_names):
         neuron_groups[name+'e'].refrac_e = truncated_normal_values(
             refrac_e/b2.ms, sigma_het, 1, 1e9, n_e) * b2.ms
 
-        plt.hist(neuron_groups[name+'e'].tau/b2.ms, bins=20)
-        plt.xlabel("τ [ms] (Zeitkonstante exz. Neuronen)")
-        plt.ylabel("Häufigkeit")
-        plt.savefig(data_path+'plots/tau_hist.png', dpi=600)
+        fig, ax = plt.subplots(2,2, sharey = True)
+        ax[0,0].hist(neuron_groups[name+'e'].tau/b2.ms, bins=20)
+        ax[0,0].set_xlabel("τ [ms]")
+        ax[0,0].set_ylabel("Häufigkeit")
+        ax[0,0].set_title("Verteilung der Zeitkonstante\n der Membranspannung")
+        
+        ax[0,1].hist(neuron_groups[name+'e'].tau_ge/b2.ms, bins=20)
+        ax[0,1].set_xlabel("τ_ge [ms]")
+        ax[0,1].set_title("Verteilung der Zeitkonstante\n der exz. Leitfähigkeit")
+        
+        ax[1,0].hist(neuron_groups[name+'e'].tau_gi/b2.ms, bins=20)
+        ax[1,0].set_xlabel("τ_gi [ms]")
+        ax[1,0].set_ylabel("Häufigkeit")
+        ax[1,0].set_title("Verteilung der Zeitkonstante\n der inh. Leitfähigkeit")
+        
+        ax[1,1].hist(neuron_groups[name+'e'].refrac_e/b2.ms, bins=20)
+        ax[1,1].set_xlabel("Refraktärphase [ms]")
+        ax[1,1].set_title("Verteilung der Dauer\n der Refraktärphase")
+
+        fig.suptitle("Neuronale Heterogenität")
+        plt.tight_layout()
+        plt.savefig(data_path+'plots/het_hist.png', dpi=600)
         plt.clf()
 
-        plt.hist(neuron_groups[name+'e'].tau_ge/b2.ms, bins=20)
-        plt.xlabel("τ_ge [ms] (Zeitkonstante der exz. Leitfähigkeit)")
-        plt.ylabel("Häufigkeit")
-        plt.savefig(data_path+'plots/tau_ge_hist.png', dpi=600)
-        plt.clf()
-
-        plt.hist(neuron_groups[name+'e'].tau_gi/b2.ms, bins=20)
-        plt.xlabel("τ_gi [ms] (Zeitkonstante der inh. Leitfähigkeit)")
-        plt.ylabel("Häufigkeit")
-        plt.savefig(data_path+'plots/tau_gi_hist.png', dpi=600)
-        plt.clf()
-
-        plt.hist(neuron_groups[name+'e'].refrac_e/b2.ms, bins=20)
-        plt.xlabel("Refraktärphase [ms]")
-        plt.ylabel("Häufigkeit")
-        plt.savefig(data_path+'plots/refrac_hist.png', dpi=600)
-        plt.clf()
 
     if test_mode or weight_path[-8:] == 'weights/':
         neuron_groups[name+'e'].theta = np.load(
