@@ -15,4 +15,6 @@ plot_mnist.py
 run_simulations.py
 test_sigma_noise.py
 results.xlsx
+util_plot.py
 plots/
+test_sigma_noise/
