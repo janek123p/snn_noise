@@ -685,7 +685,7 @@ for subgroup_n, name in enumerate(population_names):
         model = 'w : 1'
         if p_dont_send_spike is not None and connName == 'AeAi':
             pre = 'g%s_post += w * int(rand() > p_dont_send_spike )' % conn_type[0]
-        if p_dont_send_spike_inh is not None and connName == 'AiAe':
+        elif p_dont_send_spike_inh is not None and connName == 'AiAe':
             pre = 'g%s_post += w * int(rand() > p_dont_send_spike_inh)' % conn_type[0]
         else:
             pre = 'g%s_post += w' % conn_type[0]
