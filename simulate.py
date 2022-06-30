@@ -68,9 +68,13 @@ of membrane voltage per timestep for excitatory neurons [0mV]', default=0.)
 parser.add_argument('-noise_membrane_voltage_min', dest='noise_membrane_voltage_min', type=float, help='Minimal value of random adjustment\
 of membrane voltage per timestep for excitatory neurons [0mV]', default=0.)
 parser.add_argument('-voltage_noise_sigma', dest='sigma_v', type=float,
-                    help='Standard deviation of the noise added to the membrane voltage every timestep in mV [0]', default=0.)
+                    help='Standard deviation of the noise added to the membrane voltage of excitatory neurons every timestep in mV [0]', default=0.)
+parser.add_argument('-voltage_noise_sigma_inh', dest='sigma_v_inh', type=float,
+                    help='Standard deviation of the noise added to the membrane voltage of inhibitory neurons every timestep in mV [0]', default=0.)
 parser.add_argument('-membrane_voltage_quant', dest='membrane_voltage_quant', type=int,
                     help='Number of bits to quantify membane voltage of excitatory neurons [None]', default=None)
+parser.add_argument('-membrane_voltage_quant_inh', dest='membrane_voltage_quant_inh', type=int,
+                    help='Number of bits to quantify membane voltage of inhibitory neurons [None]', default=None)
 parser.add_argument('-weight_quant', dest='weight_quant', type=int,
                     help='Number of bits to quantify weights [None]', default=None)
 parser.add_argument('-stoch_weight_quant', dest='stoch_weight_quant', type=int,
@@ -103,8 +107,10 @@ diff_rand_theta = args.rand_thresh_max - min_rand_theta
 noise_v_min = args.noise_membrane_voltage_min
 noise_v_diff = args.noise_membrane_voltage_max - noise_v_min
 sigma_v = args.sigma_v*b2.mV
+sigma_v_inh = args.sigma_v_inh*b2.mV
 sigma_het = args.sigma_het
 v_quant = args.membrane_voltage_quant
+v_quant_inh = args.membrane_voltage_quant_inh
 w_quant = args.weight_quant
 stoch_w_quant = args.stoch_weight_quant
 salt_pepper_alpha = args.salt_pepper_alpha
@@ -158,7 +164,9 @@ if noise_v_min > 0 and noise_v_diff > 0:
     summary += 'Minimal random adjustment of the membrane voltage = %.5f\nMaximal random adjustment of the membrane voltage %.5f\n' % (
         noise_v_min, noise_v_min + noise_v_diff)
 if v_quant is not None:
-    summary += 'Number of bits to quantify membrane voltage: %d\n' % v_quant
+    summary += 'Number of bits to quantify membrane voltage of exc. neurons: %d\n' % v_quant
+if v_quant_inh is not None:
+    summary += 'Number of bits to quantify membrane voltage of inh. neurons: %d\n' % v_quant_inh
 if w_quant is not None:
     summary += 'Number of bits to quantify weights: %d\n' % w_quant
 if stoch_w_quant is not None:
@@ -175,8 +183,11 @@ if p_dont_send_spike_inh is not None:
     summary += 'Propability that a presynaptic spike in the inhibitory layer does not lead to an increase of the postsynaptic conductance: %.4f\n' % (
         p_dont_send_spike_inh)
 if abs(sigma_v/b2.mV) > 1e-10:
-    summary += 'Normally distributed noise of the membrane voltage: %.6f mV/dt\n' % (
+    summary += 'Normally distributed noise of the membrane voltage of exc. neurons: %.6f mV/dt\n' % (
         sigma_v / b2.mV)
+if abs(sigma_v_inh/b2.mV) > 1e-10:
+    summary += 'Normally distributed noise of the membrane voltage of inh. neurons: %.6f mV/dt\n' % (
+        sigma_v_inh / b2.mV)
 if sigma_het is not None:
     summary += 'Standard deviation of neural heterogenity as proportion of the mean value: %.3f \n' % sigma_het
 
@@ -418,6 +429,8 @@ if stoch_w_quant is not None:
     round_val_w = 2**stoch_w_quant
 if v_quant is not None:
     round_val_v = 2**v_quant
+if v_quant_inh is not None:
+    round_val_v_inh = 2**v_quant_inh
 
 
 @b2.implementation('cython', '''
@@ -474,9 +487,11 @@ v_thresh_e_str = '(v > (rand_theta + theta - offset + v_thresh_e)) and (timer>re
 
 reset_e_str += '; rand_theta = min_rand_theta*mV + rand()*diff_rand_theta*mV'
 
-
 v_thresh_i_str = 'v>v_thresh_i'
-v_reset_i_str = 'v=v_reset_i'
+if v_quant_inh is None:
+    v_reset_i_str = 'v=v_reset_i'
+else:
+    v_reset_i_str = 'x=v_reset_i'
 
 
 if v_quant is not None:
@@ -519,14 +534,26 @@ if clopath:
     neuron_eqs_e += '\n du_minus/dt = (v - u_minus) / tau_minus   : volt'
     neuron_eqs_e += '\n du_plus/dt = (v - u_plus) / tau_plus      : volt'
 
+if v_quant_inh is None:
+        neuron_eqs_i = '''
+            dv/dt = ((v_rest_i - v) + (I_synE+I_synI) / nS) / (10*ms) + sigma_v*sqrt(dt)*xi/dt  : volt (unless refractory)
+            I_synE = ge * nS *         -v                                                       : amp
+            I_synI = gi * nS * (-85.*mV-v)                                                      : amp
+            dge/dt = -ge/(1.0*ms)                                                               : 1
+            dgi/dt = -gi/(2.0*ms)                                                               : 1
+            '''
+else:
+    neuron_eqs_i = '''
+            dx/dt  = ((v_rest_i - v) + (I_synE+I_synI) / nS) / (10*ms) + sigma_v*sqrt(dt)*xi/dt  : volt (unless refractory)
+            v      = round_val(x/mV, round_val_v_inh) * mV                                       : volt
+            I_synE = ge * nS *         -v                                                        : amp
+            I_synI = gi * nS * (-85.*mV-v)                                                       : amp
+            dge/dt = -ge/(1.0*ms)                                                                : 1
+            dgi/dt = -gi/(2.0*ms)                                                                : 1
+            '''
 
-neuron_eqs_i = '''
-        dv/dt = ((v_rest_i - v) + (I_synE+I_synI) / nS) / (10*ms)   : volt (unless refractory)
-        I_synE = ge * nS *         -v                               : amp
-        I_synI = gi * nS * (-85.*mV-v)                              : amp
-        dge/dt = -ge/(1.0*ms)                                       : 1
-        dgi/dt = -gi/(2.0*ms)                                       : 1
-        '''
+
+
 if not clopath:
     eqs_stdp_ee = '''
                     post2before                                     : 1
@@ -587,12 +614,17 @@ neuron_groups['Ai'] = b2.NeuronGroup(n_i*len(population_names), neuron_eqs_i, th
 for subgroup_n, name in enumerate(population_names):
     print(print_addon+'Creating neuron group %s...' % name)
 
-    if v_quant is not None:
+    if v_quant is None:
+        neuron_groups[name+'e'].v = v_rest_e - 40. * b2.mV
+    else:
         neuron_groups[name+'e'].x = np.round(
             (v_rest_e/b2.mV - 40.) * round_val_v) / round_val_v*b2.mV
+
+    if v_quant_inh is None:
+        neuron_groups[name+'i'].v = v_rest_i - 40. * b2.mV
     else:
-        neuron_groups[name+'e'].v = v_rest_e - 40. * b2.mV
-    neuron_groups[name+'i'].v = v_rest_i - 40. * b2.mV
+        neuron_groups[name+'i'].x = np.round(
+            (v_rest_i/b2.mV - 40.) * round_val_v_inh) / round_val_v_inh*b2.mV
 
     if sigma_het is not None:
         def truncated_normal_values(mean, std_proportion, lower, upper, n):
@@ -609,30 +641,32 @@ for subgroup_n, name in enumerate(population_names):
         neuron_groups[name+'e'].refrac_e = truncated_normal_values(
             refrac_e/b2.ms, sigma_het, 1, 1e9, n_e) * b2.ms
 
-        fig, ax = plt.subplots(2,2, sharey = True)
-        ax[0,0].hist(neuron_groups[name+'e'].tau/b2.ms, bins=20)
-        ax[0,0].set_xlabel("τ [ms]")
-        ax[0,0].set_ylabel("Häufigkeit")
-        ax[0,0].set_title("Verteilung der Zeitkonstante\n der Membranspannung")
-        
-        ax[0,1].hist(neuron_groups[name+'e'].tau_ge/b2.ms, bins=20)
-        ax[0,1].set_xlabel("τ_ge [ms]")
-        ax[0,1].set_title("Verteilung der Zeitkonstante\n der exz. Leitfähigkeit")
-        
-        ax[1,0].hist(neuron_groups[name+'e'].tau_gi/b2.ms, bins=20)
-        ax[1,0].set_xlabel("τ_gi [ms]")
-        ax[1,0].set_ylabel("Häufigkeit")
-        ax[1,0].set_title("Verteilung der Zeitkonstante\n der inh. Leitfähigkeit")
-        
-        ax[1,1].hist(neuron_groups[name+'e'].refrac_e/b2.ms, bins=20)
-        ax[1,1].set_xlabel("Refraktärphase [ms]")
-        ax[1,1].set_title("Verteilung der Dauer\n der Refraktärphase")
+        fig, ax = plt.subplots(2, 2, sharey=True)
+        ax[0, 0].hist(neuron_groups[name+'e'].tau/b2.ms, bins=20)
+        ax[0, 0].set_xlabel("τ [ms]")
+        ax[0, 0].set_ylabel("Häufigkeit")
+        ax[0, 0].set_title(
+            "Verteilung der Zeitkonstante\n der Membranspannung")
+
+        ax[0, 1].hist(neuron_groups[name+'e'].tau_ge/b2.ms, bins=20)
+        ax[0, 1].set_xlabel("τ_ge [ms]")
+        ax[0, 1].set_title(
+            "Verteilung der Zeitkonstante\n der exz. Leitfähigkeit")
+
+        ax[1, 0].hist(neuron_groups[name+'e'].tau_gi/b2.ms, bins=20)
+        ax[1, 0].set_xlabel("τ_gi [ms]")
+        ax[1, 0].set_ylabel("Häufigkeit")
+        ax[1, 0].set_title(
+            "Verteilung der Zeitkonstante\n der inh. Leitfähigkeit")
+
+        ax[1, 1].hist(neuron_groups[name+'e'].refrac_e/b2.ms, bins=20)
+        ax[1, 1].set_xlabel("Refraktärphase [ms]")
+        ax[1, 1].set_title("Verteilung der Dauer\n der Refraktärphase")
 
         fig.suptitle("Neuronale Heterogenität")
         plt.tight_layout()
         plt.savefig(data_path+'plots/het_hist.png', dpi=600)
         plt.clf()
-
 
     if test_mode or weight_path[-8:] == 'weights/':
         neuron_groups[name+'e'].theta = np.load(
