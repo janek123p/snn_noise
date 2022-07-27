@@ -633,11 +633,11 @@ if not is_clopath_or_similar:
 else:
     # clopath model or clopath-similar model
     # clopath similar model is not a real clopath model (model was only implemented
-    # due to an error and maintained to be able to reproduce results for compraison purposes)
+    # due to an error and maintained to be able to reproduce results for comparison purposes)
 
     # clopath parameters
     tau_x = 15 * b2.ms
-    A_LTD = 1e-9/b2.mV  # 1e-6
+    A_LTD = 1e-9/b2.mV
     x_reset = 1*b2.ms
     theta_minus = v_reset_e
 
@@ -653,14 +653,13 @@ else:
         theta_plus = v_reset_e
         A_LTP = 1e-4/(b2.mV*b2.mV)
 
-    # add learning rates to summary string
+    # add learning rates and thetas to summary string
     summary += "A_LTD = %.5E\nA_LTP = %.5E\n" % (
         A_LTD*b2.mV, A_LTP*b2.mV*b2.mV)
+    summary += "theta_minus = %.5EmV\ntheta_plus = %.5EmV\n" % (theta_minus/b2.mV, theta_plus/b2.mV)
 
     # add presynaptic trace
-    eqs_stdp_ee = '''
-                    dxpre/dt   =   -xpre/(tau_x)         : 1 (event-driven)
-                '''
+    eqs_stdp_ee = '\ndxpre/dt   =   -xpre/(tau_x)         : 1 (event-driven)\n'
 
     # add pre- and postsynaptic equations with and without quantization
     if w_quant is not None:
@@ -923,6 +922,58 @@ for obj_list in [neuron_groups, input_groups, connections, spike_counters]:
 if save_debug_info:
     net.add(measure_changes)
 
+"""
+sm = SpikeMonitor(neuron_groups['Ae'], variables='gi')
+spikes = 0
+val_arr = np.zeros((400, 1000), dtype=float)
+spike_times_since_last = []
+spike_ids_since_last = []
+last = 0
+idx = 0
+@b2.network_operation
+def test_fun(t):
+    global spikes, val_arr, idx, spike_times_since_last, spike_ids_since_last, last
+    val_arr[:, idx % val_arr.shape[1]] = neuron_groups['Ae'].v/b2.mV
+    if np.sum(sm.count) > spikes:
+        print("\n")
+        for i in range(int(np.sum(sm.count)) - spikes):
+            spike_times_since_last.append(sm.t[-i-1]/b2.ms - last)
+            spike_ids_since_last.append(sm.i[-i-1])
+            print("t =",sm.t[-i-1]/b2.ms,"neuron",sm.i[-i-1],"spiked with gi =", sm.gi[-i-1])
+        spikes = int(np.sum(sm.count))
+    idx+=1
+    if idx % val_arr.shape[1] == 0 and idx > 0:
+        plt.figure(figsize=(13,5))
+        print(spike_times_since_last)
+        plt.scatter(spike_times_since_last, 400-np.array(spike_ids_since_last), c = 'red', marker ='x')
+        plt.imshow(val_arr, extent=[0, val_arr.shape[1]/2, 0, 400], aspect = 'auto')
+        plt.xlabel("Zeit [ms]")
+        plt.ylabel("Neuronen-ID")
+        plt.colorbar().ax.set_ylabel("Membranspannung [mV]")
+        plt.tight_layout()
+        if p_dont_send_spike_inh is None and p_dont_send_spike is not None:
+            plt.title("Veränderung der Membranspannung der exzitatorischen\n Neuronen bei %d%% Spike-Verlust zwischen exz. und inh. Neuronen" % round(p_dont_send_spike*100))
+            plt.savefig("plots/ms_exc_voltage.png", dpi=600, bbox_inches='tight')
+        elif p_dont_send_spike is None and p_dont_send_spike_inh is not None:
+            plt.title("Veränderung der Membranspannung der exzitatorischen\n Neuronen bei %d%% Spike-Verlust zwischen inh. und exc. Neuronen" % round(p_dont_send_spike_inh*100))
+            plt.savefig("plots/ms_inh_voltage.png", dpi=600, bbox_inches='tight')
+        elif p_dont_send_spike is not None and p_dont_send_spike_inh is not None:
+            plt.title("Veränderung der Membranspannung der exzitatorischen\n Neuronen bei %d%% Spike-Verlust" % round(p_dont_send_spike_inh*100))
+            plt.savefig("plots/msf_inh_exc_%.1f_voltage.png" % p_dont_send_spike_inh, dpi=600, bbox_inches='tight')
+        else:
+            plt.title("Veränderung der Membranspannung der exzitatorischen\n Neuronen ohne Spike-Verlust")
+            plt.savefig("plots/no_msf_voltage.png", dpi=600, bbox_inches='tight')
+
+        plt.clf()
+        last = t/b2.ms
+        print("LAST: ",last)
+        spike_times_since_last = []
+        spike_ids_since_last = []
+
+net.add(sm)
+net.add(test_fun)
+"""
+
 
 
 # init some simulation variables
@@ -1112,10 +1163,10 @@ if save_debug_info:
                    for val in w_bits]
 
     plt.plot(w_bits, accounted_w)
-    plt.xlabel("Quantisiserung der Nachkommastellen [Bit]")
-    plt.ylabel("Anteil der berücksichtigten Gewichtsänderungen")
-    plt.title(
-        "Einfluss der Quantisierung des synaptischen\nGewichte auf die Gewichtsveränderungen")
+    plt.xlabel("Quantisiserung der Nachkommastellen der Gewichte [Bits]")
+    plt.ylabel("Anteil der durchgeführten\nGewichtsänderungen")
+    #plt.title(
+    #    "Einfluss der Quantisierung des synaptischen\nGewichte auf die Gewichtsveränderungen")
     plt.xticks(w_bits)
     plt.savefig(data_path+'plots/w_change_alt.png',
                 dpi=600, bbox_inches="tight")
@@ -1125,10 +1176,10 @@ if save_debug_info:
                    for val in v_bits]
 
     plt.plot(v_bits, accounted_v)
-    plt.xlabel("Quantisierung der Nachkommastellen [Bit]")
-    plt.ylabel("Anteil der berücksichtigten Spannungsänderungen")
-    plt.title(
-        "Einfluss der Quantisierung der Membranspannung\n auf die Membranspannungs-Updates")
+    plt.xlabel("Quantisierung der Nachkommastellen der Membranspannung [Bit]")
+    plt.ylabel("Anteil der durchgeführten\nSpannungsänderungen")
+    #plt.title(
+    #    "Einfluss der Quantisierung der Membranspannung\n auf die Membranspannungs-Updates")
     plt.xticks(v_bits)
     plt.savefig(data_path+'plots/v_change_alt.png',
                 dpi=600, bbox_inches="tight")

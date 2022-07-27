@@ -18,3 +18,4 @@ results.xlsx
 util_plot.py
 plots/
 test_sigma_noise/
+get_current_status.py
