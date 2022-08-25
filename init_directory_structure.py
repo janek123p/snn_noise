@@ -4,9 +4,7 @@ Created on 15.12.2014
 @author: Peter U. Diehl
 '''
 
-import scipy.ndimage as sp
 import numpy as np
-import pylab
 import sys
 import argparse
 import os
