@@ -6,12 +6,19 @@ Im Rahmen der Bachelorarbeit "Robustheit lernender, biologischer neuronaler Netz
 
 ## Installation
 
-Für das Skript wird Brian2 benötigt. Ein Conda-Environment mit BRIAN2 sowie allen weiteren Abhängigkeiten kann mithilfe der env.yml und dem Befehl
-```
-conda env create -f env.yml
-```
-erzeugt werden.
+Für das Skript wird Brian2 benötigt. Brian2 kann über den Befehl
 
+```
+conda install -c conda-forge brian2
+```
+
+Darüber hinaus sind die folgenden Pakete notwendig, welche ebenfalls über Conda oder Pip installiert werden können:
+- argparse
+- numpy
+- scipy
+- scikitlearn
+- matplotlib
+- brian2tools (conda install -c brian-team brian2tools)
 
 Die Simulationen wurden mit BRIAN 2.5.0.3 und CentOS Linux release 7.9.2009 (Core) durchgeführt.
 
